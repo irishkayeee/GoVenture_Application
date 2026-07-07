@@ -1,8 +1,3 @@
-/**
- * authShared.tsx
- * Shared constants, icons, and components used by LoginForm & SignUpForm.
- */
-
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -27,6 +22,8 @@ export interface AuthError {
   password?:    string;
   confirmPass?: string;
   fullName?:    string;
+  firstName?:   string;
+  lastName?:    string;
   general?:     string;
 }
 
@@ -55,9 +52,19 @@ export const validateFullName = (name: string): string | undefined => {
   if (name.trim().length < 2) return 'Name must be at least 2 characters.';
 };
 
+export const validateFirstName = (name: string): string | undefined => {
+  if (!name.trim()) return 'First name is required.';
+  if (name.trim().length < 2) return 'First name must be at least 2 characters.';
+};
+
+export const validateLastName = (name: string): string | undefined => {
+  if (!name.trim()) return 'Last name is required.';
+  if (name.trim().length < 2) return 'Last name must be at least 2 characters.';
+};
+
 /* ── Icons ── */
 export const EmailIcon = () => (
-  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+  <Svg width={19} height={19} viewBox="0 0 24 24" fill="none">
     <Path
       d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
       stroke={C.brownMid} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"
@@ -66,7 +73,7 @@ export const EmailIcon = () => (
 );
 
 export const LockIcon = () => (
-  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+  <Svg width={19} height={19} viewBox="0 0 24 24" fill="none">
     <Path
       d="M17 11H7a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2z"
       stroke={C.brownMid} strokeWidth={1.8} strokeLinejoin="round"
@@ -79,14 +86,14 @@ export const LockIcon = () => (
 );
 
 export const UserIcon = () => (
-  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+  <Svg width={19} height={19} viewBox="0 0 24 24" fill="none">
     <Path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" stroke={C.brownMid} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     <Path d="M12 11a4 4 0 100-8 4 4 0 000 8z" stroke={C.brownMid} strokeWidth={1.8} />
   </Svg>
 );
 
 export const EyeIcon = ({ visible }: { visible: boolean }) => (
-  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+  <Svg width={19} height={19} viewBox="0 0 24 24" fill="none">
     {visible ? (
       <>
         <Path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke={C.brownMid} strokeWidth={1.8} strokeLinejoin="round" />
@@ -156,13 +163,13 @@ export const InputField = ({
 );
 
 const inp = StyleSheet.create({
-  container: { marginBottom: 9 },
-  wrap:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.divider, borderRadius: 12, paddingHorizontal: 10, height: 46 },
+  container: { marginBottom: 10 },
+  wrap:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.divider, borderRadius: 12, paddingHorizontal: 10, height: 44 },
   wrapError: { borderColor: C.error },
   iconWrap:  { width: 28, height: 28, borderRadius: 8, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-  input:     { flex: 1, fontSize: 12, color: C.brown, fontWeight: '500' },
-  eyeBtn:    { padding: 4 },
-  errorText: { fontSize: 10, color: C.error, marginTop: 3, marginLeft: 4 },
+  input:     { flex: 1, fontSize: 14, color: C.brown, fontWeight: '500' },
+  eyeBtn:    { padding: 5 },
+  errorText: { fontSize: 11, color: C.error, marginTop: 3, marginLeft: 4 },
 });
 
 /* ── General Error Banner ── */

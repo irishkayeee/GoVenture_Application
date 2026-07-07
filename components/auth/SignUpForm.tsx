@@ -1,21 +1,21 @@
-/**
- * SignUpForm.tsx
- * Handles the Sign Up form with validation and backend-ready handlers.
- *
- * HOW TO WIRE YOUR BACKEND:
- *   Replace the `// 🔌 BACKEND` comment block in handleSignUp() with your API call.
- *   The function already handles loading state, field errors, and general errors.
- */
-
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform,
+  ActivityIndicator, Platform,
+  StyleSheet,
+  Text, TouchableOpacity,
+  View,
 } from 'react-native';
 import {
-  C, AuthError,
-  EmailIcon, LockIcon, UserIcon,
-  InputField, ErrorBanner, SuccessBanner,
-  validateEmail, validatePassword, validateConfirmPass, validateFullName,
+  AuthError,
+  C,
+  ErrorBanner,
+  InputField,
+  LockIcon,
+  SuccessBanner,
+  UserIcon,
+  validateConfirmPass,
+  validateFirstName, validateLastName,
+  validatePassword,
 } from './Authshared';
 
 interface SignUpFormProps {
@@ -24,8 +24,8 @@ interface SignUpFormProps {
 }
 
 export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormProps) {
-  const [fullName,    setFullName]    = useState('');
-  const [email,       setEmail]       = useState('');
+  const [firstName,   setFirstName]   = useState('');
+  const [lastName,    setLastName]    = useState('');
   const [password,    setPassword]    = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [showPass,    setShowPass]    = useState(false);
@@ -37,13 +37,13 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
   /* ── Validation ── */
   const validate = (): boolean => {
     const e: AuthError = {
-      fullName:    validateFullName(fullName),
-      email:       validateEmail(email),
+      firstName:   validateFirstName(firstName),
+      lastName:    validateLastName(lastName),
       password:    validatePassword(password),
       confirmPass: validateConfirmPass(password, confirmPass),
     };
     setErrors(e);
-    return !e.fullName && !e.email && !e.password && !e.confirmPass;
+    return !e.firstName && !e.lastName && !e.password && !e.confirmPass;
   };
 
   /* ── Submit ── */
@@ -59,7 +59,7 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
       // const res = await fetch('https://your-api.com/auth/register', {
       //   method: 'POST',
       //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ fullName, email, password }),
+      //   body: JSON.stringify({ firstName, lastName, password }),
       // });
       // const data = await res.json();
       // if (!res.ok) throw new Error(data.message || 'Registration failed.');
@@ -76,9 +76,9 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
     } catch (err: any) {
       // Map backend error messages to the right field or general banner
       const msg: string = err?.message || 'Something went wrong. Please try again.';
-      if (msg.toLowerCase().includes('email'))    setErrors({ email: msg });
-      else if (msg.toLowerCase().includes('name')) setErrors({ fullName: msg });
-      else                                         setErrors({ general: msg });
+      if (msg.toLowerCase().includes('first'))     setErrors({ firstName: msg });
+      else if (msg.toLowerCase().includes('last'))  setErrors({ lastName: msg });
+      else                                          setErrors({ general: msg });
     } finally {
       setLoading(false);
     }
@@ -92,19 +92,18 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
 
       <InputField
         icon={<UserIcon />}
-        placeholder="Full Name"
-        value={fullName}
-        onChangeText={t => { setFullName(t); setErrors(p => ({ ...p, fullName: undefined })); }}
-        errorMsg={errors.fullName}
+        placeholder="First Name"
+        value={firstName}
+        onChangeText={t => { setFirstName(t); setErrors(p => ({ ...p, firstName: undefined })); }}
+        errorMsg={errors.firstName}
       />
 
       <InputField
-        icon={<EmailIcon />}
-        placeholder="Email Address"
-        value={email}
-        onChangeText={t => { setEmail(t); setErrors(p => ({ ...p, email: undefined })); }}
-        errorMsg={errors.email}
-        keyboardType="email-address"
+        icon={<UserIcon />}
+        placeholder="Last Name"
+        value={lastName}
+        onChangeText={t => { setLastName(t); setErrors(p => ({ ...p, lastName: undefined })); }}
+        errorMsg={errors.lastName}
       />
 
       <InputField
@@ -150,16 +149,16 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
 
 const s = StyleSheet.create({
   btn: {
-    backgroundColor: C.amber, borderRadius: 50, height: 44,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 12, marginTop: 4,
+    backgroundColor: C.amber, borderRadius: 50, height: 42,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 14, marginTop: 4,
     ...Platform.select({
       ios:     { shadowColor: C.amber, shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
       android: { elevation: 4 },
     }),
   },
   btnDisabled: { opacity: 0.7 },
-  btnText:     { color: C.white, fontWeight: '800', fontSize: 12, letterSpacing: 1.4 },
+  btnText:     { color: C.white, fontWeight: '800', fontSize: 15, letterSpacing: 1.4 },
   switchRow:   { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  switchText:  { fontSize: 11, color: C.brownMid, opacity: 0.75 },
-  switchLink:  { fontSize: 11, color: C.amber, fontWeight: '700' },
+  switchText:  { fontSize: 13, color: C.brownMid, opacity: 0.75 },
+  switchLink:  { fontSize: 13, color: C.amber, fontWeight: '700' },
 });

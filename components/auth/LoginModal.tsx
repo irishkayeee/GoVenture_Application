@@ -1,21 +1,25 @@
 /**
  * LoginModal.tsx
- * Modal shell that switches between LoginForm and SignUpForm.
- * Fonts, close button, tabs, and headline live here.
  */
 
+import { DancingScript_700Bold, useFonts } from '@expo-google-fonts/dancing-script';
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, Modal, StyleSheet,
-  Dimensions, Platform, KeyboardAvoidingView,
-  TouchableWithoutFeedback, Keyboard, ScrollView,
+  Dimensions,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  StyleSheet,
+  Text, TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
 } from 'react-native';
-import { useFonts, DancingScript_700Bold } from '@expo-google-fonts/dancing-script';
 import { C, CloseIcon } from './Authshared';
-import LoginForm  from './LoginForm';
+import LoginForm from './LoginForm';
 import SignUpForm from './SignUpForm';
 const { width } = Dimensions.get('window');
-const CARD_W = Math.min(width * 0.88, 340);
+const CARD_W = Math.min(width * 0.94, 400);
 
 /* ── Tab ── */
 const Tab = ({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) => (
@@ -25,7 +29,7 @@ const Tab = ({ label, active, onPress }: { label: string; active: boolean; onPre
   </TouchableOpacity>
 );
 const t = StyleSheet.create({
-  btn:         { flex: 1, alignItems: 'center', paddingVertical: 10, position: 'relative' },
+  btn:         { flex: 1, alignItems: 'center', paddingVertical: 8, position: 'relative' },
   btnActive:   {},
   label:       { fontSize: 11.5, fontWeight: '700', color: C.brownMid, opacity: 0.5, letterSpacing: 0.5 },
   labelActive: { color: C.amber, opacity: 1 },
@@ -55,7 +59,10 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={m.backdrop}>
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={m.kav}
+            >
               <View style={m.card}>
 
                 {/* ── Close Button ── */}
@@ -70,7 +77,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
 
                 {/* ── Headline ── */}
                 <View style={m.headlineWrap}>
-                  <Text style={[m.welcome, fontsLoaded && { fontFamily: 'DancingScript_700Bold' }]}>
+                  <Text style={[m.welcome, fontsLoaded && { fontFamily: 'DancingScript_700Bold', fontWeight: 'normal' as const }]}>
                     {isLogin ? 'Welcome Back!' : 'Join Us!'}
                   </Text>
                   <Text style={m.spark}>✦</Text>
@@ -87,12 +94,8 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
                   <Tab label="SIGN UP" active={!isLogin} onPress={() => setActiveTab('signup')} />
                 </View>
 
-                {/* ── Form (scrollable so keyboard doesn't clip) ── */}
-                <ScrollView
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                  style={m.formScroll}
-                >
+                {/* ── Form (fixed, not scrollable — card grows to fit) ── */}
+                <View style={m.formWrap}>
                   {isLogin
                     ? <LoginForm
                         onSwitchToSignUp={() => setActiveTab('signup')}
@@ -103,8 +106,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
                         onSuccess={onClose}
                       />
                   }
-                  <View style={{ height: 8 }} />
-                </ScrollView>
+                </View>
 
               </View>
             </KeyboardAvoidingView>
@@ -121,16 +123,20 @@ const m = StyleSheet.create({
     backgroundColor: 'rgba(59,26,12,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  kav: {
+    width: '100%',
+    alignItems: 'center',
   },
   card: {
     width:             CARD_W,
     backgroundColor:   C.white,
     borderRadius:      22,
     paddingHorizontal: 20,
-    paddingTop:        28,
+    paddingTop:        24,
     paddingBottom:     20,
     position:          'relative',
-    maxHeight:         '88%',
     ...Platform.select({
       ios:     { shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
       android: { elevation: 12 },
@@ -155,31 +161,29 @@ const m = StyleSheet.create({
     marginBottom:   2,
   },
   welcome: {
-    fontSize:   27,
+    fontSize:   25,
     fontWeight: '700',
     color:      C.brown,
     textAlign:  'center',
   },
   spark: {
-    fontSize:   12,
+    fontSize:   11,
     color:      C.amber,
-    marginTop:  5,
+    marginTop:  4,
     marginLeft: 2,
   },
   sub: {
-    fontSize:     11,
+    fontSize:     10.5,
     color:        C.brownMid,
     textAlign:    'center',
     opacity:      0.7,
-    marginBottom: 14,
+    marginBottom: 10,
   },
   tabRow: {
     flexDirection:     'row',
     borderBottomWidth: 1,
     borderBottomColor: C.divider,
-    marginBottom:      14,
+    marginBottom:      10,
   },
-  formScroll: {
-    flexGrow: 0,
-  },
+  formWrap: {},
 });

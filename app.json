@@ -1,19 +1,25 @@
 {
   "expo": {
-    "name": "goveture_app",
-    "slug": "goveture_app",
+    "name": "GoVenture Travel and Tours",
+    "slug": "goventure_app",
+    "description": "Book curated, hassle-free tours and travel packages with GoVenture Travel and Tours.",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "govetureapp",
+    "icon": "./assets/images/go_logo.png",
+    "scheme": "goventureapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "primaryColor": "#C46B1A",
+    "backgroundColor": "#F8E4D5",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.goventure.travelandtours",
+      "icon": "./assets/images/go_logo.png"
     },
     "android": {
+      "package": "com.goventure.travelandtours",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F8E4D5",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -23,7 +29,8 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
       "expo-router",
@@ -33,9 +40,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#F8E4D5",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#3B1A0C"
           }
         }
       ],
