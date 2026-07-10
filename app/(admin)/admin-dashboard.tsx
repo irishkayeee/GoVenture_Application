@@ -62,14 +62,6 @@ const HomeIcon = ({ color = C.white }: IconColorProp) => (
   </Svg>
 );
 
-const AnnouncementsIcon = ({ color = C.white }: IconColorProp) => (
-  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-    <Path d="M3 10v4a1 1 0 001 1h2l8 4V5l-8 4H4a1 1 0 00-1 1z" stroke={color} strokeWidth={1.8} strokeLinejoin="round"/>
-    <Path d="M19 9a4 4 0 010 6" stroke={color} strokeWidth={1.8} strokeLinecap="round"/>
-    <Path d="M7 15v3a1.5 1.5 0 003 0v-2" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"/>
-  </Svg>
-);
-
 const BookingsIcon = ({ color = C.white }: IconColorProp) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
     <Path d="M5 6a2 2 0 012-2h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6z" stroke={color} strokeWidth={1.8}/>
@@ -142,6 +134,12 @@ const MenuIcon = ({ color = C.amber }: { color?: string }) => (
   </Svg>
 );
 
+const CloseIcon = ({ color = C.amber, size = 22 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M5 5l14 14M19 5L5 19" stroke={color} strokeWidth={2.8} strokeLinecap="round"/>
+  </Svg>
+);
+
 const BellIcon = ({ color = C.amber }: IconColorProp) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill={color}>
     <Path d="M12 2a6 6 0 00-6 6v3.6c0 .7-.24 1.38-.68 1.92L4 15.5c-.7.86-.08 2.15 1.02 2.15h13.96c1.1 0 1.72-1.29 1.02-2.15l-1.32-2.5A3 3 0 0118 11.6V8a6 6 0 00-6-6z" />
@@ -159,7 +157,6 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'tours',         label: 'Tours',            Icon: ToursIcon },
   { key: 'calendar',      label: 'Calendar',         Icon: CalendarIcon },
   { key: 'payments',      label: 'Payments',         Icon: PaymentsIcon },
-  { key: 'announcements', label: 'Announcements',    Icon: AnnouncementsIcon },
 ];
 
 const ACCOUNT_ITEMS: NavItem[] = [
@@ -191,7 +188,7 @@ const Sidebar = ({ active, onSelect, onClose, onLogout, insetTop, insetBottom }:
   <View style={[sb.wrapper, { paddingTop: insetTop + 16, paddingBottom: 16 + insetBottom }]}>
     {/* Menu toggle */}
     <TouchableOpacity style={sb.menuBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-      <MenuIcon color={C.amber} />
+      <CloseIcon color={C.amber} size={14} />
     </TouchableOpacity>
 
     {/* Logo */}
@@ -261,7 +258,7 @@ const makeSidebarStyles = (C: ColorPalette, isDark: boolean) => StyleSheet.creat
   wrapper: {
     width: SIDEBAR_W,
     height: '100%',
-    backgroundColor: C.cardBg,
+    backgroundColor: C.bg,
     paddingHorizontal: 14,
     borderRightWidth: 1,
     borderRightColor: C.divider,
@@ -272,7 +269,7 @@ const makeSidebarStyles = (C: ColorPalette, isDark: boolean) => StyleSheet.creat
   },
   menuBtn: {
     alignSelf: 'flex-end',
-    width: 38, height: 38, borderRadius: 11,
+    width: 26, height: 26, borderRadius: 8,
     backgroundColor: C.lightBg,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: C.divider,
@@ -308,7 +305,7 @@ const makeSidebarStyles = (C: ColorPalette, isDark: boolean) => StyleSheet.creat
 ════════════════════════════════════════ */
 const TAB_LABELS: Record<string, string> = {
   bookings: 'Bookings', messages: 'Messages', accounts: 'Account', notifications: 'Notifications',
-  tours: 'Tours', calendar: 'Calendar', payments: 'Payments', announcements: 'Announcements',
+  tours: 'Tours', calendar: 'Calendar', payments: 'Payments',
   help: 'Help & Support', settings: 'Settings',
 };
 
@@ -484,7 +481,7 @@ const TopNav = ({ activeTab, onOpenMenu }: { activeTab: string; onOpenMenu: () =
 };
 
 /* ════════════════════════════════════════
-   ONBOARDING TOOLTIP — points at a TopNav icon
+   ONBOARDING TOOLTIP 
 ════════════════════════════════════════ */
 type OnboardingTooltipProps = {
   message:     string;
@@ -549,7 +546,7 @@ const makeTopNavStyles = (C: ColorPalette) => StyleSheet.create({
   bar: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 10, paddingVertical: 12,
-    backgroundColor: C.cardBg,
+    backgroundColor: C.bg,
     borderRadius: 14,
     gap: 8,
     overflow: 'hidden',
@@ -567,7 +564,7 @@ const makeTopNavStyles = (C: ColorPalette) => StyleSheet.create({
   },
   titleWrap: { flex: 1, minWidth: 0 },
   title:     { fontSize: 14, fontWeight: '900', color: C.brown, letterSpacing: 0.1 },
-  subtitle:  { fontSize: 10.5, color: C.brownMid, opacity: 0.7, fontWeight: '600', marginTop: 1 },
+  subtitle:  { fontSize: 15, color: C.brown, opacity: 1, fontWeight: '900', letterSpacing: 0.2 },
 });
 
 /* ════════════════════════════════════════
