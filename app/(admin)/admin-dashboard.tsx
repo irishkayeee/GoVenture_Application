@@ -128,12 +128,6 @@ const LogoutIcon = () => (
   </Svg>
 );
 
-const MenuIcon = ({ color = C.amber }: { color?: string }) => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-    <Path d="M3 7h18M3 12h18M3 17h12" stroke={color} strokeWidth={2.8} strokeLinecap="round"/>
-  </Svg>
-);
-
 const CloseIcon = ({ color = C.amber, size = 22 }: { color?: string; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path d="M5 5l14 14M19 5L5 19" stroke={color} strokeWidth={2.8} strokeLinecap="round"/>
@@ -144,6 +138,12 @@ const BellIcon = ({ color = C.amber }: IconColorProp) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill={color}>
     <Path d="M12 2a6 6 0 00-6 6v3.6c0 .7-.24 1.38-.68 1.92L4 15.5c-.7.86-.08 2.15 1.02 2.15h13.96c1.1 0 1.72-1.29 1.02-2.15l-1.32-2.5A3 3 0 0118 11.6V8a6 6 0 00-6-6z" />
     <Path d="M9.5 19.5a2.5 2.5 0 005 0h-5z" />
+  </Svg>
+);
+
+const HamburgerIcon = ({ color = C.white }: IconColorProp) => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+    <Path d="M4 7h16M4 12h16M4 17h16" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
   </Svg>
 );
 
@@ -453,27 +453,31 @@ const makeSettingsStyles = (C: ColorPalette) => StyleSheet.create({
 /* ════════════════════════════════════════
    TOP NAV BAR
 ════════════════════════════════════════ */
-const TopNav = ({ activeTab, onOpenMenu }: { activeTab: string; onOpenMenu: () => void }) => {
+const TopNav = ({ onOpenMenu }: { onOpenMenu: () => void }) => {
   const { C } = useAppTheme();
   const tn = useMemo(() => makeTopNavStyles(C), [C]);
-  const allLabels: Record<string, string> = { dashboard: '', ...TAB_LABELS };
   return (
     <View style={tn.shadowLayer}>
-      <View style={tn.bar}>
-        <TouchableOpacity style={tn.menuBtn} onPress={onOpenMenu} activeOpacity={0.8}>
-          <MenuIcon color={C.white} />
-        </TouchableOpacity>
+      <View style={tn.ticket}>
+        <View style={[tn.stub, { backgroundColor: C.amber }]}>
+          <TouchableOpacity onPress={onOpenMenu} activeOpacity={0.8} style={tn.stubBtn}>
+            <HamburgerIcon color={C.white} />
+          </TouchableOpacity>
+        </View>
 
-        <View style={tn.titleWrap}>
-          <Text
-            style={[tn.title, { height: 0, opacity: 0 }]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-          >
-            {allLabels[activeTab] || ''}
-          </Text>
-          <Text style={tn.subtitle} numberOfLines={1} ellipsizeMode="tail">GoVenture Travel & Tours</Text>
+        <View style={tn.perforation}>
+          <View style={tn.notchTop} />
+          <View style={tn.dashedLine} />
+          <View style={tn.notchBottom} />
+        </View>
+
+        <View style={tn.body}>
+          <View style={tn.brandBlock}>
+            <Text numberOfLines={1}>
+              <Text style={tn.brandGo}>Go</Text><Text style={tn.brandVenture}>Venture</Text>
+            </Text>
+            <Text style={tn.tagline} numberOfLines={1}>—  TRAVEL & TOURS  —</Text>
+          </View>
         </View>
       </View>
     </View>
@@ -537,34 +541,64 @@ const mt = StyleSheet.create({
 const makeTopNavStyles = (C: ColorPalette) => StyleSheet.create({
   shadowLayer: {
     marginHorizontal: 14, marginTop: 10, marginBottom: 16,
-    borderRadius: 14,
+    borderRadius: 12,
     ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+      ios:     { shadowColor: '#3B1A0C', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
       android: { elevation: 4 },
     }),
   },
-  bar: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 10, paddingVertical: 12,
+  ticket: {
+    flexDirection: 'row', alignItems: 'stretch',
+    borderRadius: 12, overflow: 'hidden',
+    borderWidth: 1, borderColor: C.divider,
+  },
+  stub: {
+    width: 64,
+    alignItems: 'center', justifyContent: 'center',
+    gap: 10,
+    flexShrink: 0,
+    position: 'relative',
+  },
+  stubBtn: {
+    alignItems: 'center', justifyContent: 'center',
+    padding: 4,
+  },
+  perforation: {
+    width: 1,
+    position: 'relative',
+  },
+  dashedLine: {
+    flex: 1,
+    borderLeftWidth: 1.5,
+    borderLeftColor: C.divider,
+    borderStyle: 'dashed',
+  },
+  notchTop: {
+    position: 'absolute',
+    top: -9, left: -8,
+    width: 16, height: 16, borderRadius: 8,
     backgroundColor: C.bg,
-    borderRadius: 14,
-    gap: 8,
+    zIndex: 2,
+  },
+  notchBottom: {
+    position: 'absolute',
+    bottom: -9, left: -8,
+    width: 16, height: 16, borderRadius: 8,
+    backgroundColor: C.bg,
+    zIndex: 2,
+  },
+  body: {
+    flex: 1, minWidth: 0,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.white,
+    paddingHorizontal: 12, paddingVertical: 10,
     overflow: 'hidden',
     position: 'relative',
   },
-  menuBtn: {
-    width: 42, height: 42, borderRadius: 13,
-    backgroundColor: C.amber,
-    alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0,
-    ...Platform.select({
-      ios:     { shadowColor: C.amber, shadowOpacity: 0.3, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
-      android: { elevation: 2 },
-    }),
-  },
-  titleWrap: { flex: 1, minWidth: 0 },
-  title:     { fontSize: 14, fontWeight: '900', color: C.brown, letterSpacing: 0.1 },
-  subtitle:  { fontSize: 15, color: C.brown, opacity: 1, fontWeight: '900', letterSpacing: 0.2 },
+  brandBlock: { flexShrink: 1, minWidth: 0 },
+  brandGo:       { fontSize: 19, fontWeight: '900', color: C.brown, letterSpacing: -0.3 },
+  brandVenture:  { fontSize: 19, fontWeight: '900', color: C.amber, letterSpacing: -0.3 },
+  tagline: { fontSize: 9, fontWeight: '800', color: C.brownMid, letterSpacing: 1.2, marginTop: 2, opacity: 0.8 },
 });
 
 /* ════════════════════════════════════════
@@ -724,6 +758,7 @@ function AdminDashboardInner() {
   const [activeTab,    setActiveTab]    = useState('dashboard');
   const [showWelcome,  setShowWelcome]  = useState(true);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [pendingMessageClient, setPendingMessageClient] = useState<string | null>(null);
   // 0 = none, 1 = menu
   const [tooltipStep,  setTooltipStep]  = useState(0);
 
@@ -751,6 +786,11 @@ function AdminDashboardInner() {
     closeSidebar();
   };
 
+  const goToClientMessages = (clientName: string) => {
+    setPendingMessageClient(clientName);
+    setActiveTab('messages');
+  };
+
   const handleLogout = () => {
     closeSidebar();
     setShowLogoutConfirm(true);
@@ -768,7 +808,7 @@ function AdminDashboardInner() {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.bg} />
 
       <View style={{ position: 'relative', zIndex: 25 }}>
-        <TopNav activeTab={activeTab} onOpenMenu={openSidebar} />
+        <TopNav onOpenMenu={openSidebar} />
 
         {tooltipStep === 1 && (
           <OnboardingTooltip
@@ -785,13 +825,18 @@ function AdminDashboardInner() {
         {activeTab === 'dashboard'
           ? <DashboardOverview />
           : activeTab === 'bookings'
-          ? <BookingsScreen />
+          ? <BookingsScreen onMessageClient={goToClientMessages} />
           : activeTab === 'tours'
           ? <TourPackagesScreen />
           : activeTab === 'calendar'
           ? <CalendarScreen />
           : activeTab === 'messages'
-          ? <MessagesScreen />
+          ? (
+            <MessagesScreen
+              openForClient={pendingMessageClient}
+              onConsumeOpenRequest={() => setPendingMessageClient(null)}
+            />
+          )
           : activeTab === 'payments'
           ? <PaymentsScreen />
           : activeTab === 'accounts'

@@ -5,14 +5,14 @@
  * with the full booking info, client card, note field, and actions.
  */
 
-import React, { useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C as LIGHT_C } from '../dashboard/theme';
 import { useAppTheme, ColorPalette } from '../ThemeContext';
-import { BOOKINGS, Booking, BookingStatus, STATUS_FILTER_OPTIONS, formatPeso } from './mockData';
+import { Booking, BookingStatus, STATUS_FILTER_OPTIONS, formatPeso } from './mockData';
+import { BOOKINGS_LIST_API_URL, BOOKING_UPDATE_STATUS_API_URL } from '@/constants/api';
 import BookingDetailModal from './BookingDetailModal';
 
 const STATUS_STYLE: Record<BookingStatus, { bg: string; color: string; accent: string }> = {
@@ -20,8 +20,6 @@ const STATUS_STYLE: Record<BookingStatus, { bg: string; color: string; accent: s
   Pending:   { bg: '#FFF5E0', color: '#B8922E', accent: '#B8922E' },
   Cancelled: { bg: '#FDEAEA', color: LIGHT_C.danger,  accent: LIGHT_C.danger },
 };
-
-const AVATAR_COLORS = [LIGHT_C.amber, LIGHT_C.purple, LIGHT_C.info, LIGHT_C.danger, '#12946F'];
 
 const SearchIcon = ({ color = LIGHT_C.brownMid }: { color?: string }) => (
   <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
@@ -54,6 +52,13 @@ const PeopleIcon = ({ color = LIGHT_C.brownMid }: { color?: string }) => (
   <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
     <Path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
     <Path d="M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+  </Svg>
+);
+
+const ProfilePlaceholderIcon = ({ color }: { color: string }) => (
+  <Svg width={19} height={19} viewBox="0 0 24 24" fill="none" style={{ marginTop: 3 }}>
+    <Path d="M12 12a4 4 0 100-8 4 4 0 000 8z" stroke={color} strokeWidth={1.8} />
+    <Path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
   </Svg>
 );
 
@@ -106,17 +111,15 @@ const StatusPickerModal = ({ visible, title, options, selected, onSelect, onClos
   );
 };
 
-const BookingCard = ({ booking, index, onPress, C, bs }: { booking: Booking; index: number; onPress: () => void; C: ColorPalette; bs: ReturnType<typeof makeStyles> }) => {
+const BookingCard = ({ booking, onPress, C, bs }: { booking: Booking; onPress: () => void; C: ColorPalette; bs: ReturnType<typeof makeStyles> }) => {
   const st = STATUS_STYLE[booking.status];
-  const avatarColor = AVATAR_COLORS[index % AVATAR_COLORS.length];
 
   return (
     <TouchableOpacity style={bs.card} activeOpacity={0.85} onPress={onPress}>
-      <View style={[bs.cardAccent, { backgroundColor: st.accent }]} />
       <View style={bs.cardBody}>
         <View style={bs.cardTopRow}>
-          <View style={[bs.avatar, { backgroundColor: avatarColor }]}>
-            <Text style={bs.avatarText}>{booking.initials}</Text>
+          <View style={bs.avatar}>
+            <ProfilePlaceholderIcon color={C.brownMid} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={bs.clientName} numberOfLines={1}>{booking.clientName}</Text>
@@ -147,14 +150,33 @@ const BookingCard = ({ booking, index, onPress, C, bs }: { booking: Booking; ind
   );
 };
 
-export default function BookingsScreen() {
+export default function BookingsScreen({ onMessageClient }: { onMessageClient?: (clientName: string) => void }) {
   const { C } = useAppTheme();
   const bs = useMemo(() => makeStyles(C), [C]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<BookingStatus | ''>('');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [selected, setSelected] = useState<Booking | null>(null);
-  const [bookings, setBookings] = useState<Booking[]>(BOOKINGS);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const loadBookings = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(BOOKINGS_LIST_API_URL);
+      const result = await res.json();
+      if (result.status === 'success') setBookings(result.data);
+      else setError(result.message || 'Failed to load bookings.');
+    } catch {
+      setError("Can't connect to the server. Please check if XAMPP is running.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadBookings(); }, [loadBookings]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -163,7 +185,8 @@ export default function BookingsScreen() {
         !q ||
         b.clientName.toLowerCase().includes(q) ||
         b.destination.toLowerCase().includes(q) ||
-        b.reference.toLowerCase().includes(q);
+        b.reference.toLowerCase().includes(q) ||
+        b.startDate.toLowerCase().includes(q);
       const matchesStatus = !statusFilter || b.status === statusFilter;
       return matchesQuery && matchesStatus;
     });
@@ -175,17 +198,17 @@ export default function BookingsScreen() {
     setBookings((prev) =>
       prev.map((b) => (b.id === id ? { ...b, status, ...(paymentStatus ? { paymentStatus } : {}) } : b))
     );
+    fetch(BOOKING_UPDATE_STATUS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status, paymentStatus }),
+    }).catch(() => {});
   };
 
   return (
     <View style={{ flex: 1 }}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 8 }} keyboardShouldPersistTaps="handled">
-        <LinearGradient
-          colors={['#6B2E10', '#B85F17', '#D17B2E']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={bs.headerCard}
-        >
+        <View style={[bs.headerCard, { backgroundColor: C.amber }]}>
           <View style={bs.headerDecorLayer} pointerEvents="none">
             <Text style={[bs.headerDecorEmoji, { top: 8, right: 66, fontSize: 15, opacity: 0.55, transform: [{ rotate: '18deg' }] }]}>✈️</Text>
             <Text style={[bs.headerDecorEmoji, { top: 2, right: 4, fontSize: 20, opacity: 0.5 }]}>📍</Text>
@@ -207,14 +230,14 @@ export default function BookingsScreen() {
               </View>
             </View>
           </View>
-        </LinearGradient>
+        </View>
 
         <View style={bs.searchRow}>
           <View style={bs.searchBox}>
             <SearchIcon color={C.brownMid} />
             <TextInput
               style={bs.searchInput}
-              placeholder="Search by name, destination, or reference"
+              placeholder="Name, destination, or date"
               placeholderTextColor={C.brownMid + '80'}
               value={query}
               onChangeText={setQuery}
@@ -246,14 +269,22 @@ export default function BookingsScreen() {
         </View>
 
         <View style={bs.list}>
-          {filtered.length === 0 ? (
+          {loading ? (
+            <View style={bs.emptyWrap}><ActivityIndicator color={C.amber} /></View>
+          ) : error ? (
+            <View style={bs.emptyWrap}>
+              <Text style={bs.emptyEmoji}>⚠️</Text>
+              <Text style={bs.emptyText}>{error}</Text>
+              <TouchableOpacity onPress={loadBookings}><Text style={[bs.emptyText, { color: C.amber, fontWeight: '800' }]}>Tap to retry</Text></TouchableOpacity>
+            </View>
+          ) : filtered.length === 0 ? (
             <View style={bs.emptyWrap}>
               <Text style={bs.emptyEmoji}>🔍</Text>
               <Text style={bs.emptyText}>No bookings match your search.</Text>
             </View>
           ) : (
-            filtered.map((b, i) => (
-              <BookingCard key={b.id} booking={b} index={i} onPress={() => setSelected(b)} C={C} bs={bs} />
+            filtered.map((b) => (
+              <BookingCard key={b.id} booking={b} onPress={() => setSelected(b)} C={C} bs={bs} />
             ))
           )}
         </View>
@@ -277,6 +308,7 @@ export default function BookingsScreen() {
         onClose={() => setSelected(null)}
         onConfirm={(id) => updateStatus(id, 'Confirmed', 'Paid')}
         onCancel={(id) => updateStatus(id, 'Cancelled', 'Refunded')}
+        onMessage={() => { if (selected) onMessageClient?.(selected.clientName); }}
       />
     </View>
   );
@@ -319,11 +351,11 @@ const makeStyles = (C: ColorPalette) => StyleSheet.create({
 
   searchRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginTop: 14 },
   searchBox: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: C.cardBg, borderRadius: 12, paddingHorizontal: 12, height: 42,
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: C.cardBg, borderRadius: 12, paddingHorizontal: 14, height: 42,
     borderWidth: 1, borderColor: C.divider,
   },
-  searchInput: { flex: 1, fontSize: 13, color: C.brown },
+  searchInput: { flex: 1, fontSize: 12.5, color: C.brown },
   filterBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: C.cardBg, borderRadius: 12, paddingHorizontal: 14, height: 42,
@@ -347,27 +379,27 @@ const makeStyles = (C: ColorPalette) => StyleSheet.create({
 
   list: { paddingHorizontal: 16, gap: 10 },
   card: {
-    flexDirection: 'row', backgroundColor: C.cardBg, borderRadius: 14, overflow: 'hidden',
+    backgroundColor: C.cardBg, borderRadius: 14, overflow: 'hidden',
     borderWidth: 1, borderColor: C.divider,
     ...Platform.select({
       ios:     { shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
       android: { elevation: 1 },
     }),
   },
-  cardAccent: { width: 5 },
   cardBody: { flex: 1, padding: 12, gap: 10 },
-  cardTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   avatar: {
     width: 38, height: 38, borderRadius: 19,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    backgroundColor: C.lightBg,
+    borderWidth: 1, borderColor: C.divider,
   },
-  avatarText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
   clientName: { fontSize: 13.5, fontWeight: '800', color: C.brown },
   destRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
   destText: { fontSize: 11.5, color: C.brownMid, opacity: 0.85, flexShrink: 1 },
   badge: { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 4, flexShrink: 0 },
   badgeText: { fontSize: 10, fontWeight: '800' },
-  cardBottomRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  cardBottomRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginLeft: 48 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
   metaText: { fontSize: 11, color: C.brownMid, opacity: 0.8, fontWeight: '600' },
   priceText: { fontSize: 13.5, fontWeight: '900', color: C.amber },

@@ -5,17 +5,21 @@ import {
   Text, TouchableOpacity,
   View,
 } from 'react-native';
+import { REGISTER_API_URL } from '@/constants/api';
 import {
   AuthError,
   C,
+  EmailIcon,
   ErrorBanner,
   InputField,
   LockIcon,
+  OrDivider,
   SuccessBanner,
   UserIcon,
   validateConfirmPass,
+  validateEmail,
   validateFirstName, validateLastName,
-  validatePassword,
+  validatePasswordStrength,
 } from './Authshared';
 
 interface SignUpFormProps {
@@ -26,6 +30,7 @@ interface SignUpFormProps {
 export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormProps) {
   const [firstName,   setFirstName]   = useState('');
   const [lastName,    setLastName]    = useState('');
+  const [email,       setEmail]       = useState('');
   const [password,    setPassword]    = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [showPass,    setShowPass]    = useState(false);
@@ -39,11 +44,12 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
     const e: AuthError = {
       firstName:   validateFirstName(firstName),
       lastName:    validateLastName(lastName),
-      password:    validatePassword(password),
+      email:       validateEmail(email),
+      password:    validatePasswordStrength(password),
       confirmPass: validateConfirmPass(password, confirmPass),
     };
     setErrors(e);
-    return !e.firstName && !e.lastName && !e.password && !e.confirmPass;
+    return !e.firstName && !e.lastName && !e.email && !e.password && !e.confirmPass;
   };
 
   /* ── Submit ── */
@@ -54,19 +60,21 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
     setSuccessMsg('');
 
     try {
-      // 🔌 BACKEND — replace this block with your real API call
-      // Example:
-      // const res = await fetch('https://your-api.com/auth/register', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ firstName, lastName, password }),
-      // });
-      // const data = await res.json();
-      // if (!res.ok) throw new Error(data.message || 'Registration failed.');
+      const response = await fetch(REGISTER_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          password,
+        }),
+      });
+      const result = await response.json();
 
-      // ── Simulated delay (remove when backend is ready) ──
-      await new Promise(r => setTimeout(r, 1000));
-      // ── End simulation ──
+      if (result.status !== 'success') {
+        throw new Error(result.message || 'Registration failed.');
+      }
 
       setSuccessMsg('Account created! You can now log in.');
       setTimeout(() => {
@@ -75,9 +83,10 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
       }, 1500);
     } catch (err: any) {
       // Map backend error messages to the right field or general banner
-      const msg: string = err?.message || 'Something went wrong. Please try again.';
+      const msg: string = err?.message || "Can't connect to the server. Please check if XAMPP is running.";
       if (msg.toLowerCase().includes('first'))     setErrors({ firstName: msg });
       else if (msg.toLowerCase().includes('last'))  setErrors({ lastName: msg });
+      else if (msg.toLowerCase().includes('email')) setErrors({ email: msg });
       else                                          setErrors({ general: msg });
     } finally {
       setLoading(false);
@@ -107,6 +116,15 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
       />
 
       <InputField
+        icon={<EmailIcon />}
+        placeholder="Email Address"
+        value={email}
+        onChangeText={t => { setEmail(t); setErrors(p => ({ ...p, email: undefined })); }}
+        errorMsg={errors.email}
+        keyboardType="email-address"
+      />
+
+      <InputField
         icon={<LockIcon />}
         placeholder="Password"
         value={password}
@@ -116,6 +134,11 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
         toggleSecure={() => setShowPass(v => !v)}
         errorMsg={errors.password}
       />
+      {!errors.password && (
+        <Text style={s.hint}>
+          Min. 8 characters, with uppercase, lowercase, a number, and a special character.
+        </Text>
+      )}
 
       <InputField
         icon={<LockIcon />}
@@ -136,6 +159,8 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
         }
       </TouchableOpacity>
 
+      <OrDivider />
+
       {/* Switch to Login */}
       <View style={s.switchRow}>
         <Text style={s.switchText}>Already have an account? </Text>
@@ -148,8 +173,9 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
 }
 
 const s = StyleSheet.create({
+  hint: { fontSize: 10.5, color: C.brownMid, opacity: 0.65, marginTop: -6, marginBottom: 10, marginLeft: 4 },
   btn: {
-    backgroundColor: C.amber, borderRadius: 50, height: 42,
+    backgroundColor: C.amber, borderRadius: 50, height: 34,
     alignItems: 'center', justifyContent: 'center', marginBottom: 14, marginTop: 4,
     ...Platform.select({
       ios:     { shadowColor: C.amber, shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
@@ -157,7 +183,7 @@ const s = StyleSheet.create({
     }),
   },
   btnDisabled: { opacity: 0.7 },
-  btnText:     { color: C.white, fontWeight: '800', fontSize: 15, letterSpacing: 1.4 },
+  btnText:     { color: C.white, fontWeight: '800', fontSize: 12.5, letterSpacing: 1.4 },
   switchRow:   { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   switchText:  { fontSize: 13, color: C.brownMid, opacity: 0.75 },
   switchLink:  { fontSize: 13, color: C.amber, fontWeight: '700' },

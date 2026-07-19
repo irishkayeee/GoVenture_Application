@@ -5,14 +5,17 @@
  * input.
  */
 
-import React, { useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C as LIGHT_C } from '../dashboard/theme';
 import { useAppTheme, ColorPalette } from '../ThemeContext';
-import { CONVERSATIONS, Conversation, ChatMessage } from './mockData';
+import { Conversation } from './mockData';
+import {
+  ADMIN_CONVERSATIONS_LIST_API_URL, ADMIN_SEND_MESSAGE_API_URL, ADMIN_MARK_CONVERSATION_READ_API_URL,
+} from '@/constants/api';
 import ChatDetailModal from './ChatDetailModal';
 
 const AVATAR_COLORS = [LIGHT_C.amber, LIGHT_C.purple, LIGHT_C.info, LIGHT_C.danger, '#12946F'];
@@ -44,32 +47,78 @@ const ConversationRow = ({ convo, index, onPress, ms }: { convo: Conversation; i
   );
 };
 
-export default function MessagesScreen() {
+export default function MessagesScreen({
+  openForClient, onConsumeOpenRequest,
+}: {
+  openForClient?: string | null;
+  onConsumeOpenRequest?: () => void;
+} = {}) {
   const { C } = useAppTheme();
   const ms = useMemo(() => makeStyles(C), [C]);
-  const [conversations, setConversations] = useState<Conversation[]>(CONVERSATIONS);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const activeConvo = conversations.find((c) => c.id === activeId) ?? null;
 
+  const loadConversations = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(ADMIN_CONVERSATIONS_LIST_API_URL);
+      const result = await res.json();
+      if (result.status === 'success') setConversations(result.data);
+      else setError(result.message || 'Failed to load conversations.');
+    } catch {
+      setError("Can't connect to the server. Please check if XAMPP is running.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadConversations(); }, [loadConversations]);
+
   const openConvo = (id: string) => {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unread: false } : c)));
     setActiveId(id);
+    fetch(ADMIN_MARK_CONVERSATION_READ_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId: id }),
+    }).catch(() => {});
   };
 
-  const handleSend = (conversationId: string, text: string) => {
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== conversationId) return c;
-        const msg: ChatMessage = {
-          id: `m${c.messages.length + 1}-${Date.now()}`,
-          sender: 'admin',
-          text,
-          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-        };
-        return { ...c, messages: [...c.messages, msg], lastMessage: text, timeAgo: 'Just now' };
-      })
+  // Jumped here from a booking's "Message" button — open that client's thread.
+  useEffect(() => {
+    if (!openForClient || conversations.length === 0) return;
+    const match = conversations.find(
+      (c) => c.clientName.toLowerCase() === openForClient.toLowerCase()
     );
+    if (match) openConvo(match.id);
+    onConsumeOpenRequest?.();
+  }, [openForClient, conversations]);
+
+  const handleSend = async (conversationId: string, text: string) => {
+    try {
+      const res = await fetch(ADMIN_SEND_MESSAGE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId, text }),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') return;
+      setConversations((prev) =>
+        prev.map((c) => (c.id !== conversationId ? c : {
+          ...c,
+          messages: [...c.messages, result.data],
+          lastMessage: text,
+          timeAgo: 'Just now',
+        }))
+      );
+    } catch {
+      // Message wasn't sent; leaving the thread unchanged so the user can retry.
+    }
   };
 
   return (
@@ -106,11 +155,22 @@ export default function MessagesScreen() {
 
         <View style={ms.sectionWrap}>
           <Text style={ms.sectionLabel}>CONVERSATIONS</Text>
-          <View style={ms.convoList}>
-            {conversations.map((c, i) => (
-              <ConversationRow key={c.id} convo={c} index={i} onPress={() => openConvo(c.id)} ms={ms} />
-            ))}
-          </View>
+          {loading ? (
+            <View style={ms.emptyWrap}><ActivityIndicator color={C.amber} /></View>
+          ) : error ? (
+            <View style={ms.emptyWrap}>
+              <Text style={ms.emptyText}>{error}</Text>
+              <TouchableOpacity onPress={loadConversations}><Text style={[ms.emptyText, { color: C.amber, fontWeight: '800' }]}>Tap to retry</Text></TouchableOpacity>
+            </View>
+          ) : conversations.length === 0 ? (
+            <View style={ms.emptyWrap}><Text style={ms.emptyText}>No conversations yet.</Text></View>
+          ) : (
+            <View style={ms.convoList}>
+              {conversations.map((c, i) => (
+                <ConversationRow key={c.id} convo={c} index={i} onPress={() => openConvo(c.id)} ms={ms} />
+              ))}
+            </View>
+          )}
         </View>
 
         <Copyright />
@@ -171,4 +231,6 @@ const makeStyles = (C: ColorPalette) => StyleSheet.create({
   convoPreview: { fontSize: 11.5, color: C.brownMid, opacity: 0.75, marginTop: 2 },
   convoTime: { fontSize: 10, color: C.brownMid, opacity: 0.6, fontWeight: '600' },
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.danger },
+  emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 50, gap: 8 },
+  emptyText: { fontSize: 12.5, color: C.brownMid, opacity: 0.7, fontWeight: '600' },
 });

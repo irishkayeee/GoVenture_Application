@@ -9,23 +9,14 @@ import {
   ActivityIndicator, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LOGIN_API_URL } from '@/constants/api';
 import {
   C, AuthError,
-  EmailIcon, LockIcon, CheckIcon,
-  InputField, ErrorBanner,
+  EmailIcon, LockIcon,
+  InputField, ErrorBanner, OrDivider,
   validateEmail, validatePassword,
 } from './Authshared';
 import ForgotPasswordModal from './ForgotPasswordModal';
-
-/* ─────────────────────────────────────────────
-   Hardcoded demo credentials.
-   Replace with your real API response check.
-───────────────────────────────────────────── */
-const ADMIN_EMAIL    = 'admin@goventure.com';
-const ADMIN_PASSWORD = 'Admin@123';
-
-const CLIENT_EMAIL    = 'client@goventure.com';
-const CLIENT_PASSWORD = 'Client@123';
 
 interface LoginFormProps {
   onSwitchToSignUp: () => void;
@@ -38,7 +29,6 @@ export default function LoginForm({ onSwitchToSignUp, onSuccess }: LoginFormProp
   const [email,      setEmail]      = useState('');
   const [password,   setPassword]   = useState('');
   const [showPass,   setShowPass]   = useState(false);
-  const [remember,   setRemember]   = useState(false);
   const [loading,    setLoading]    = useState(false);
   const [errors,     setErrors]     = useState<AuthError>({});
   const [showForgot, setShowForgot] = useState(false);
@@ -59,26 +49,19 @@ export default function LoginForm({ onSwitchToSignUp, onSuccess }: LoginFormProp
     setErrors({});
 
     try {
-      // 🔌 BACKEND — replace this block with your real API call
-      // const res = await fetch('https://your-api.com/auth/login', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ email: loginEmail, password: loginPassword }),
-      // });
-      // const data = await res.json();
-      // if (!res.ok) throw new Error(data.message || 'Login failed.');
-      // const isAdmin = data.role === 'admin';
+      const response = await fetch(LOGIN_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      const result = await response.json();
 
-      await new Promise(r => setTimeout(r, 1000)); // simulated network delay
-
-      const normalizedEmail = loginEmail.trim().toLowerCase();
-      const isAdmin  = normalizedEmail === ADMIN_EMAIL.toLowerCase()  && loginPassword === ADMIN_PASSWORD;
-      const isClient = normalizedEmail === CLIENT_EMAIL.toLowerCase() && loginPassword === CLIENT_PASSWORD;
-
-      if (!isAdmin && !isClient) {
-        setErrors({ general: 'Invalid email or password.' });
+      if (result.status !== 'success') {
+        setErrors({ general: result.message || 'Invalid email or password.' });
         return;
       }
+
+      const isAdmin = result.data.role === 'admin';
 
       // Close the modal first, then navigate
       onSuccess?.();
@@ -88,11 +71,8 @@ export default function LoginForm({ onSwitchToSignUp, onSuccess }: LoginFormProp
         router.push((isAdmin ? '/admin-dashboard' : '/client-dashboard') as any);
       }, 150);
 
-    } catch (err: any) {
-      const msg: string = err?.message || 'Something went wrong. Please try again.';
-      if (msg.toLowerCase().includes('email'))     setErrors({ email: msg });
-      else if (msg.toLowerCase().includes('pass')) setErrors({ password: msg });
-      else                                         setErrors({ general: msg });
+    } catch {
+      setErrors({ general: "Can't connect to the server. Please check if XAMPP is running." });
     } finally {
       setLoading(false);
     }
@@ -103,40 +83,8 @@ export default function LoginForm({ onSwitchToSignUp, onSuccess }: LoginFormProp
     performLogin(email, password);
   };
 
-  const handleDemoLogin = (role: 'admin' | 'client') => {
-    const demoEmail    = role === 'admin' ? ADMIN_EMAIL    : CLIENT_EMAIL;
-    const demoPassword = role === 'admin' ? ADMIN_PASSWORD : CLIENT_PASSWORD;
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    setErrors({});
-    performLogin(demoEmail, demoPassword);
-  };
-
   return (
     <View>
-      {/* Demo login shortcuts — remove this block once real auth/database is wired up */}
-      <View style={s.demoBox}>
-        <Text style={s.demoTitle}>QUICK DEMO LOGIN</Text>
-        <View style={s.demoBtnRow}>
-          <TouchableOpacity
-            style={s.demoBtn}
-            activeOpacity={0.85}
-            disabled={loading}
-            onPress={() => handleDemoLogin('admin')}
-          >
-            <Text style={s.demoBtnText}>Log in as Admin</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.demoBtn, s.demoBtnOutline]}
-            activeOpacity={0.85}
-            disabled={loading}
-            onPress={() => handleDemoLogin('client')}
-          >
-            <Text style={[s.demoBtnText, s.demoBtnTextOutline]}>Log in as Client</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {!!errors.general && <ErrorBanner message={errors.general} />}
 
       <InputField
@@ -159,15 +107,8 @@ export default function LoginForm({ onSwitchToSignUp, onSuccess }: LoginFormProp
         errorMsg={errors.password}
       />
 
-      {/* Remember / Forgot row */}
-      <View style={s.rememberRow}>
-        <TouchableOpacity style={s.rememberLeft} onPress={() => setRemember(r => !r)} activeOpacity={0.7}>
-          <View style={[s.checkbox, remember && s.checkboxActive]}>
-            {remember && <CheckIcon />}
-          </View>
-          <Text style={s.rememberText}>Remember me</Text>
-        </TouchableOpacity>
-
+      {/* Forgot password */}
+      <View style={s.forgotRow}>
         <TouchableOpacity activeOpacity={0.7} onPress={() => setShowForgot(true)}>
           <Text style={s.forgot}>Forgot Password?</Text>
         </TouchableOpacity>
@@ -186,6 +127,8 @@ export default function LoginForm({ onSwitchToSignUp, onSuccess }: LoginFormProp
         }
       </TouchableOpacity>
 
+      <OrDivider />
+
       {/* Switch to Sign Up */}
       <View style={s.switchRow}>
         <Text style={s.switchText}>Don't have an account? </Text>
@@ -203,29 +146,18 @@ export default function LoginForm({ onSwitchToSignUp, onSuccess }: LoginFormProp
 }
 
 const s = StyleSheet.create({
-  demoBox:      { backgroundColor: '#FFF3E8', borderWidth: 1, borderColor: C.divider, borderRadius: 10, padding: 10, marginBottom: 14 },
-  demoTitle:    { fontSize: 9, fontWeight: '800', color: C.amber, letterSpacing: 0.8, marginBottom: 7 },
-  demoBtnRow:   { flexDirection: 'row', gap: 8 },
-  demoBtn:      { flex: 1, backgroundColor: C.amber, borderRadius: 10, paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
-  demoBtnOutline:     { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: C.amber },
-  demoBtnText:        { fontSize: 10.5, fontWeight: '800', color: C.white },
-  demoBtnTextOutline: { color: C.amber },
-  rememberRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, marginTop: 4 },
-  rememberLeft:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  checkbox:       { width: 19, height: 19, borderRadius: 5, borderWidth: 2, borderColor: C.amber, backgroundColor: C.white, alignItems: 'center', justifyContent: 'center' },
-  checkboxActive: { backgroundColor: C.amber, borderColor: C.amber },
-  rememberText:   { fontSize: 13, color: C.amber, fontWeight: '600' },
-  forgot:         { fontSize: 13, color: C.amber, fontWeight: '600' },
+  forgotRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 12, marginTop: 2 },
+  forgot:    { fontSize: 13, color: C.amber, fontWeight: '600' },
   btn: {
-    backgroundColor: C.amber, borderRadius: 50, height: 42,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+    backgroundColor: C.amber, borderRadius: 50, height: 34,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 10,
     ...Platform.select({
       ios:     { shadowColor: C.amber, shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
       android: { elevation: 4 },
     }),
   },
   btnDisabled: { opacity: 0.7 },
-  btnText:     { color: C.white, fontWeight: '800', fontSize: 15, letterSpacing: 1.4 },
+  btnText:     { color: C.white, fontWeight: '800', fontSize: 12.5, letterSpacing: 1.4 },
   switchRow:   { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   switchText:  { fontSize: 13, color: C.brownMid, opacity: 0.75 },
   switchLink:  { fontSize: 13, color: C.amber, fontWeight: '700' },

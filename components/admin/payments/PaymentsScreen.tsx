@@ -5,19 +5,23 @@
  * tapping a record's eye icon opens PaymentDetailModal.
  */
 
-import React, { useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C as LIGHT_C } from '../dashboard/theme';
 import { useAppTheme, ColorPalette } from '../ThemeContext';
 import {
-  PAYMENTS, Payment, PaymentStatus, PaymentMethod,
-  INITIAL_QR_METHODS, QRPaymentMethod,
+  Payment, PaymentStatus, PaymentMethod,
+  QRPaymentMethod,
   STATUS_FILTER_OPTIONS, METHOD_FILTER_OPTIONS,
   formatPeso2,
 } from './mockData';
+import {
+  PAYMENTS_LIST_API_URL, PAYMENT_MARK_PAID_API_URL,
+  QR_METHODS_LIST_API_URL, QR_METHOD_CREATE_API_URL,
+} from '@/constants/api';
 import AddPaymentMethodModal from './AddPaymentMethodModal';
 import PaymentDetailModal from './PaymentDetailModal';
 
@@ -168,8 +172,10 @@ const PaymentCard = ({ payment, onView }: { payment: Payment; onView: () => void
 export default function PaymentsScreen() {
   const { C } = useAppTheme();
   const ps = useMemo(() => makeStyles(C), [C]);
-  const [payments, setPayments] = useState<Payment[]>(PAYMENTS);
-  const [qrMethods, setQrMethods] = useState<QRPaymentMethod[]>(INITIAL_QR_METHODS);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [qrMethods, setQrMethods] = useState<QRPaymentMethod[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<PaymentStatus | ''>('');
@@ -204,8 +210,50 @@ export default function PaymentsScreen() {
   const statusLabel = STATUS_FILTER_OPTIONS.find((o) => o.value === statusFilter)?.label ?? 'All Status';
   const methodLabel = METHOD_FILTER_OPTIONS.find((o) => o.value === methodFilter)?.label ?? 'All Payment Methods';
 
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [paymentsRes, qrRes] = await Promise.all([
+        fetch(PAYMENTS_LIST_API_URL).then((r) => r.json()),
+        fetch(QR_METHODS_LIST_API_URL).then((r) => r.json()),
+      ]);
+      if (paymentsRes.status === 'success') setPayments(paymentsRes.data);
+      else setError(paymentsRes.message || 'Failed to load payments.');
+      if (qrRes.status === 'success') setQrMethods(qrRes.data);
+    } catch {
+      setError("Can't connect to the server. Please check if XAMPP is running.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
   const handleMarkPaid = (id: string) => {
     setPayments((prev) => prev.map((p) => (p.id === id ? { ...p, balance: 0, status: 'Fully Paid' } : p)));
+    fetch(PAYMENT_MARK_PAID_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
+  };
+
+  const handleAddQrMethod = async (m: QRPaymentMethod) => {
+    setQrMethods((prev) => [...prev, m]);
+    try {
+      const res = await fetch(QR_METHOD_CREATE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: m.method, accountName: m.accountName }),
+      });
+      const result = await res.json();
+      if (result.status === 'success') {
+        setQrMethods((prev) => prev.map((q) => (q === m ? result.data : q)));
+      }
+    } catch {
+      // Local state already shows the new method; a refresh will pick up the real id.
+    }
   };
 
   return (
@@ -305,7 +353,15 @@ export default function PaymentsScreen() {
         </View>
 
         <View style={ps.list}>
-          {filtered.length === 0 ? (
+          {loading ? (
+            <View style={ps.emptyWrap}><ActivityIndicator color={C.amber} /></View>
+          ) : error ? (
+            <View style={ps.emptyWrap}>
+              <Text style={ps.emptyEmoji}>⚠️</Text>
+              <Text style={ps.emptyText}>{error}</Text>
+              <TouchableOpacity onPress={loadData}><Text style={[ps.emptyText, { color: C.amber, fontWeight: '800' }]}>Tap to retry</Text></TouchableOpacity>
+            </View>
+          ) : filtered.length === 0 ? (
             <View style={ps.emptyWrap}>
               <Text style={ps.emptyEmoji}>🔍</Text>
               <Text style={ps.emptyText}>No payments match your search.</Text>
@@ -324,7 +380,7 @@ export default function PaymentsScreen() {
       <AddPaymentMethodModal
         visible={showAddMethodModal}
         onClose={() => setShowAddMethodModal(false)}
-        onSave={(m) => setQrMethods((prev) => [...prev, m])}
+        onSave={handleAddQrMethod}
       />
       <PaymentDetailModal
         visible={!!selectedPayment}

@@ -46,7 +46,13 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow GoVenture to access your photos to set a tour cover image."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

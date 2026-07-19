@@ -45,11 +45,27 @@ const CancelIcon = ({ color }: { color: string }) => (
   </Svg>
 );
 
-const InfoTile = ({ label, children, s }: { label: string; children: React.ReactNode; s: ReturnType<typeof makeStyles> }) => (
-  <View style={s.tile}>
-    <Text style={s.tileLabel}>{label}</Text>
-    {children}
-  </View>
+const CheckCircleIcon = ({ color }: { color: string }) => (
+  <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
+    <Path d="M12 21a9 9 0 100-18 9 9 0 000 18z" stroke={color} strokeWidth={1.8} />
+    <Path d="M8 12.5l2.5 2.5L16 9.5" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+// A "stamp" — dashed circle border with a mark that reflects the booking's status.
+const StatusStampIcon = ({ status, color }: { status: BookingStatus; color: string }) => (
+  <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
+    <Path d="M12 21a9 9 0 100-18 9 9 0 000 18z" stroke={color} strokeWidth={1.6} strokeDasharray="2.2,2.2" />
+    {status === 'Confirmed' && (
+      <Path d="M8 12.5l2.5 2.5L16 9.5" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    )}
+    {status === 'Pending' && (
+      <Path d="M12 7.5v5l3.2 1.8" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    )}
+    {status === 'Cancelled' && (
+      <Path d="M9 9l6 6M15 9l-6 6" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    )}
+  </Svg>
 );
 
 type Props = {
@@ -58,9 +74,10 @@ type Props = {
   onClose:    () => void;
   onConfirm:  (id: string) => void;
   onCancel:   (id: string) => void;
+  onMessage?: () => void;
 };
 
-export default function BookingDetailModal({ visible, booking, onClose, onConfirm, onCancel }: Props) {
+export default function BookingDetailModal({ visible, booking, onClose, onConfirm, onCancel, onMessage }: Props) {
   const { C } = useAppTheme();
   const s = useMemo(() => makeStyles(C), [C]);
   const [note, setNote] = useState('');
@@ -87,34 +104,6 @@ export default function BookingDetailModal({ visible, booking, onClose, onConfir
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
-            <Text style={s.sectionLabel}>BOOKING INFO</Text>
-            <View style={s.grid}>
-              <InfoTile s={s} label="REFERENCE">
-                <Text style={s.tileValue}>{booking.reference}</Text>
-              </InfoTile>
-              <InfoTile s={s} label="BOOKING STATUS">
-                <View style={[s.badge, { backgroundColor: st.bg, alignSelf: 'flex-start' }]}>
-                  <Text style={[s.badgeText, { color: st.color }]}>{booking.status}</Text>
-                </View>
-              </InfoTile>
-              <InfoTile s={s} label="TRAVEL DATES">
-                <Text style={s.tileValue}>
-                  {booking.startDate} {booking.startTime} – {booking.endDate} {booking.endTime}
-                </Text>
-              </InfoTile>
-              <InfoTile s={s} label="TRAVELERS">
-                <Text style={s.tileValue}>{booking.pax} pax</Text>
-              </InfoTile>
-              <InfoTile s={s} label="TOTAL PRICE">
-                <Text style={[s.tileValue, { color: C.amber, fontWeight: '900' }]}>{formatPeso(booking.price)}</Text>
-              </InfoTile>
-              <InfoTile s={s} label="PAYMENT STATUS">
-                <View style={[s.badge, { backgroundColor: '#FFF5E0', alignSelf: 'flex-start' }]}>
-                  <Text style={[s.badgeText, { color: '#B8922E' }]}>{booking.paymentStatus}</Text>
-                </View>
-              </InfoTile>
-            </View>
-
             <Text style={s.sectionLabel}>CLIENT</Text>
             <View style={s.clientCard}>
               <View style={s.avatar}>
@@ -126,13 +115,63 @@ export default function BookingDetailModal({ visible, booking, onClose, onConfir
               </View>
             </View>
 
+            <View style={s.infoCard}>
+              <View style={s.infoCardTop}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={[s.statusBadge, { backgroundColor: st.bg }]}>
+                    <CheckCircleIcon color={st.color} />
+                    <Text style={[s.statusBadgeText, { color: st.color }]}>{booking.status.toUpperCase()}</Text>
+                  </View>
+                  <Text style={s.referenceText} numberOfLines={1}>{booking.reference}</Text>
+                  <Text style={s.referenceLabel}>Booking Reference</Text>
+                </View>
+                <View style={[s.illustrationWrap, { backgroundColor: st.bg }]}>
+                  <StatusStampIcon status={booking.status} color={st.color} />
+                </View>
+              </View>
+
+              <View style={s.infoDivider} />
+
+              <View style={s.infoGridRow}>
+                <View style={s.infoField}>
+                  <Text style={s.infoFieldLabel}>TRAVEL DATES</Text>
+                  <Text style={s.infoFieldValue}>
+                    {booking.startDate.split(', ')[0]} – {booking.endDate.split(', ')[0]}, {booking.startDate.split(', ')[1]}
+                  </Text>
+                  <Text style={s.infoFieldSubValue}>{booking.startTime} – {booking.endTime}</Text>
+                </View>
+                <View style={s.infoFieldDividerV} />
+                <View style={s.infoField}>
+                  <Text style={s.infoFieldLabel}>TRAVELERS</Text>
+                  <Text style={s.infoFieldValue}>{booking.pax} pax</Text>
+                </View>
+              </View>
+
+              <View style={s.infoFieldDividerH} />
+
+              <View style={s.infoGridRow}>
+                <View style={s.infoField}>
+                  <Text style={s.infoFieldLabel}>TOTAL PRICE</Text>
+                  <Text style={[s.infoFieldValue, { color: C.amber, fontWeight: '900' }]}>{formatPeso(booking.price)}</Text>
+                </View>
+                <View style={s.infoFieldDividerV} />
+                <View style={s.infoField}>
+                  <Text style={s.infoFieldLabel}>PAYMENT STATUS</Text>
+                  <View style={[s.miniBadge, { backgroundColor: '#FFF5E0' }]}>
+                    <Text style={[s.miniBadgeText, { color: '#B8922E' }]}>{booking.paymentStatus}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
             <Text style={s.sectionLabel}>NOTE</Text>
             <TextInput
-              style={s.noteInput}
-              placeholder="Add a note for this booking..."
+              style={[s.noteInput, isFinal && s.noteInputDisabled]}
+              placeholder={isFinal ? 'Notes are locked once a booking is confirmed.' : 'Add a note for this booking...'}
               placeholderTextColor={C.brownMid + '80'}
               value={note}
               onChangeText={setNote}
+              editable={!isFinal}
               multiline
               textAlignVertical="top"
             />
@@ -149,7 +188,11 @@ export default function BookingDetailModal({ visible, booking, onClose, onConfir
               <Text style={s.confirmText}>Confirm</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[s.actionBtn, s.messageBtn]} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={[s.actionBtn, s.messageBtn]}
+              activeOpacity={0.85}
+              onPress={() => { onMessage?.(); onClose(); }}
+            >
               <MessageIcon />
               <Text style={s.messageText}>Message</Text>
             </TouchableOpacity>
@@ -183,16 +226,34 @@ const makeStyles = (C: ColorPalette) => StyleSheet.create({
   headerSub:   { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 3 },
   body: { padding: 16, paddingBottom: 24 },
   sectionLabel: { fontSize: 10.5, fontWeight: '800', color: C.brownMid, opacity: 0.65, letterSpacing: 0.6, marginBottom: 8, marginTop: 4 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 18 },
-  tile: {
-    flexBasis: '47%', flexGrow: 1,
-    backgroundColor: C.cardBg, borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: C.divider,
+  infoCard: {
+    backgroundColor: C.cardBg, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: C.divider, marginBottom: 18,
   },
-  tileLabel: { fontSize: 8.5, fontWeight: '800', color: C.brownMid, opacity: 0.6, letterSpacing: 0.5, marginBottom: 6 },
-  tileValue: { fontSize: 12.5, fontWeight: '700', color: C.brown, lineHeight: 17 },
-  badge: { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 3 },
-  badgeText: { fontSize: 10.5, fontWeight: '800' },
+  infoCardTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  statusBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
+    alignSelf: 'flex-start', marginBottom: 10,
+  },
+  statusBadgeText: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.4 },
+  referenceText: { fontSize: 18, fontWeight: '900', color: C.brown },
+  referenceLabel: { fontSize: 11, color: C.brownMid, opacity: 0.7, marginTop: 2 },
+  illustrationWrap: {
+    width: 48, height: 48, borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 10, flexShrink: 0,
+  },
+  infoDivider: { height: 1, backgroundColor: C.divider, marginVertical: 14 },
+  infoGridRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  infoField: { flex: 1, minWidth: 0 },
+  infoFieldLabel: { fontSize: 9, fontWeight: '800', color: C.brownMid, opacity: 0.6, letterSpacing: 0.5, marginBottom: 3 },
+  infoFieldValue: { fontSize: 12.5, fontWeight: '700', color: C.brown, lineHeight: 17 },
+  infoFieldSubValue: { fontSize: 11, fontWeight: '600', color: C.brownMid, opacity: 0.75, marginTop: 1 },
+  infoFieldDividerV: { width: 1, backgroundColor: C.divider, marginHorizontal: 12, alignSelf: 'stretch' },
+  infoFieldDividerH: { height: 1, backgroundColor: C.divider, marginVertical: 14 },
+  miniBadge: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
+  miniBadgeText: { fontSize: 10, fontWeight: '800' },
   clientCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: C.cardBg, borderRadius: 12, padding: 14,
@@ -211,6 +272,7 @@ const makeStyles = (C: ColorPalette) => StyleSheet.create({
     backgroundColor: C.cardBg, borderRadius: 12, borderWidth: 1, borderColor: C.divider,
     padding: 12, minHeight: 90, fontSize: 12.5, color: C.brown,
   },
+  noteInputDisabled: { backgroundColor: C.lightBg, opacity: 0.7 },
   actionRow: {
     flexDirection: 'row', gap: 8,
     paddingHorizontal: 16, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 28 : 16,

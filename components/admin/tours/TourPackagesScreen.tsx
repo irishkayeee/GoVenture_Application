@@ -6,13 +6,14 @@
  * wizard.
  */
 
-import React, { useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, ActivityIndicator, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { useAppTheme, ColorPalette } from '../ThemeContext';
-import { TOUR_PACKAGES, TourPackage, TourStatus, formatPeso } from './mockData';
+import { TourPackage, TourStatus, TourType, TOUR_TYPE_META, TOUR_TYPE_TABS, formatPeso } from './mockData';
+import { TOURS_LIST_API_URL } from '@/constants/api';
 import AddTourPackageModal from './AddTourPackageModal';
 import TourDetailModal from './TourDetailModal';
 
@@ -34,9 +35,19 @@ const FunnelIcon = ({ color }: { color: string }) => (
     <Path d="M3 4h18l-7 8.5V19l-4 2v-8.5L3 4z" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
   </Svg>
 );
+const PackageIcon = ({ color }: { color: string }) => (
+  <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
+    <Path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
 const CheckIcon = ({ color }: { color: string }) => (
   <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
     <Path d="M20 6L9 17l-5-5" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+const ChevronDownIcon = ({ color }: { color: string }) => (
+  <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
+    <Path d="M6 9l6 6 6-6" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
 const PlusIcon = () => (
@@ -55,6 +66,11 @@ const PlaneWatermarkIcon = () => (
 const StarIcon = ({ filled }: { filled: boolean }) => (
   <Svg width={11} height={11} viewBox="0 0 24 24" fill={filled ? '#E0A72E' : 'none'}>
     <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="#E0A72E" strokeWidth={1.4} strokeLinejoin="round" />
+  </Svg>
+);
+const ArrowRightIcon = ({ color }: { color: string }) => (
+  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+    <Path d="M5 12h14M13 6l6 6-6 6" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
 
@@ -92,14 +108,22 @@ const StatusPickerModal = ({ visible, title, options, selected, onSelect, onClos
   );
 };
 
-const TourCard = ({ pkg, cardWidth, onPress, ts }: { pkg: TourPackage; cardWidth: number; onPress: () => void; ts: ReturnType<typeof makeStyles> }) => (
-  <TouchableOpacity style={[ts.card, { width: cardWidth }]} activeOpacity={0.85} onPress={onPress}>
-    <LinearGradient colors={pkg.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={ts.cardBanner}>
-      <View style={ts.tagBadge}>
-        <Text style={ts.tagBadgeText}>{pkg.tag}</Text>
+const TourCard = ({ pkg, onPress, ts, C }: { pkg: TourPackage; onPress: () => void; ts: ReturnType<typeof makeStyles>; C: ColorPalette }) => {
+  const typeMeta = TOUR_TYPE_META[pkg.tourType] ?? TOUR_TYPE_META.custom;
+  return (
+  <TouchableOpacity style={ts.card} activeOpacity={0.85} onPress={onPress}>
+    <View style={ts.cardBanner}>
+      {pkg.imageUrl ? (
+        <Image source={{ uri: pkg.imageUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+      ) : (
+        <LinearGradient colors={pkg.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject}>
+          <PlaneWatermarkIcon />
+        </LinearGradient>
+      )}
+      <View style={[ts.tagBadge, { backgroundColor: typeMeta.color }]}>
+        <Text style={ts.tagBadgeText}>{typeMeta.label}</Text>
       </View>
-      <PlaneWatermarkIcon />
-    </LinearGradient>
+    </View>
 
     <View style={ts.cardInfo}>
       <Text style={ts.cardDest} numberOfLines={1}>{pkg.destination}</Text>
@@ -118,36 +142,66 @@ const TourCard = ({ pkg, cardWidth, onPress, ts }: { pkg: TourPackage; cardWidth
 
       <View style={ts.viewBtn}>
         <Text style={ts.viewBtnText}>View Details</Text>
+        <ArrowRightIcon color={C.amber} />
       </View>
     </View>
   </TouchableOpacity>
-);
+  );
+};
 
 export default function TourPackagesScreen() {
   const { C } = useAppTheme();
   const ts = useMemo(() => makeStyles(C), [C]);
-  const { width } = useWindowDimensions();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<TourStatus | ''>('');
+  const [typeFilter, setTypeFilter] = useState<TourType | ''>('');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
+  const [showTypePicker, setShowTypePicker] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedPkg, setSelectedPkg] = useState<TourPackage | null>(null);
+  const [tours, setTours] = useState<TourPackage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const isWide = width >= 560;
-  const gap = 12;
-  const contentPadding = 32;
-  const cardWidth = isWide ? (width - contentPadding - gap) / 2 : width - contentPadding;
+  const loadTours = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(TOURS_LIST_API_URL);
+      const result = await res.json();
+      if (result.status === 'success') setTours(result.data);
+      else setError(result.message || 'Failed to load tour packages.');
+    } catch {
+      setError("Can't connect to the server. Please check if XAMPP is running.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadTours(); }, [loadTours]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return TOUR_PACKAGES.filter((p) => {
+    return tours.filter((p) => {
       const matchesQuery = !q || p.destination.toLowerCase().includes(q) || p.tagline.toLowerCase().includes(q);
       const matchesStatus = !statusFilter || p.status === statusFilter;
-      return matchesQuery && matchesStatus;
+      const matchesType = !typeFilter || p.tourType === typeFilter;
+      return matchesQuery && matchesStatus && matchesType;
     });
-  }, [query, statusFilter]);
+  }, [tours, query, statusFilter, typeFilter]);
+
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const tab of TOUR_TYPE_TABS) {
+      counts[tab.value] = tab.value ? tours.filter((p) => p.tourType === tab.value).length : tours.length;
+    }
+    return counts;
+  }, [tours]);
 
   const statusLabel = STATUS_FILTER_OPTIONS.find((o) => o.value === statusFilter)?.label ?? 'All Status';
+
+  const typeOptions = TOUR_TYPE_TABS.map((tab) => ({ value: tab.value, label: `${tab.label} (${typeCounts[tab.value] ?? 0})` }));
+  const typeLabel = TOUR_TYPE_TABS.find((t) => t.value === typeFilter)?.label ?? 'All Packages';
 
   return (
     <View style={{ flex: 1 }}>
@@ -191,9 +245,14 @@ export default function TourPackagesScreen() {
         </View>
 
         <View style={ts.addRow}>
+          <TouchableOpacity style={ts.typeDropdownBtn} activeOpacity={0.8} onPress={() => setShowTypePicker(true)}>
+            <PackageIcon color={C.amber} />
+            <Text style={ts.typeDropdownText} numberOfLines={1}>{typeLabel}</Text>
+            <ChevronDownIcon color={C.brownMid} />
+          </TouchableOpacity>
           <TouchableOpacity style={ts.addBtn} activeOpacity={0.85} onPress={() => setShowAddModal(true)}>
             <PlusIcon />
-            <Text style={ts.addBtnText}>Add New Package</Text>
+            <Text style={ts.addBtnText}>Add New</Text>
           </TouchableOpacity>
         </View>
 
@@ -213,13 +272,21 @@ export default function TourPackagesScreen() {
         </View>
 
         <View style={ts.grid}>
-          {filtered.length === 0 ? (
+          {loading ? (
+            <View style={ts.emptyWrap}><ActivityIndicator color={C.amber} /></View>
+          ) : error ? (
+            <View style={ts.emptyWrap}>
+              <Text style={ts.emptyEmoji}>⚠️</Text>
+              <Text style={ts.emptyText}>{error}</Text>
+              <TouchableOpacity onPress={loadTours}><Text style={[ts.emptyText, { color: C.amber, fontWeight: '800' }]}>Tap to retry</Text></TouchableOpacity>
+            </View>
+          ) : filtered.length === 0 ? (
             <View style={ts.emptyWrap}>
               <Text style={ts.emptyEmoji}>🔍</Text>
               <Text style={ts.emptyText}>No tour packages match your search.</Text>
             </View>
           ) : (
-            filtered.map((p) => <TourCard key={p.id} pkg={p} cardWidth={cardWidth} onPress={() => setSelectedPkg(p)} ts={ts} />)
+            filtered.map((p) => <TourCard key={p.id} pkg={p} onPress={() => setSelectedPkg(p)} ts={ts} C={C} />)
           )}
         </View>
 
@@ -237,8 +304,19 @@ export default function TourPackagesScreen() {
         ts={ts}
       />
 
-      <AddTourPackageModal visible={showAddModal} onClose={() => setShowAddModal(false)} />
-      <TourDetailModal visible={!!selectedPkg} pkg={selectedPkg} onClose={() => setSelectedPkg(null)} />
+      <StatusPickerModal
+        visible={showTypePicker}
+        title="Filter by Type"
+        options={typeOptions}
+        selected={typeFilter}
+        onSelect={(v) => setTypeFilter(v as TourType | '')}
+        onClose={() => setShowTypePicker(false)}
+        C={C}
+        ts={ts}
+      />
+
+      <AddTourPackageModal visible={showAddModal} onClose={() => setShowAddModal(false)} onCreated={loadTours} />
+      <TourDetailModal visible={!!selectedPkg} pkg={selectedPkg} onClose={() => setSelectedPkg(null)} onUpdated={loadTours} />
     </View>
   );
 }
@@ -275,16 +353,22 @@ const makeStyles = (C: ColorPalette) => StyleSheet.create({
   filterBtnText: { fontSize: 12.5, fontWeight: '800', color: C.amber },
   filterBtnTextActive: { color: '#FFFFFF' },
 
-  addRow: { paddingHorizontal: 16, marginTop: 10 },
+  addRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginTop: 10 },
+  typeDropdownBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+    backgroundColor: C.cardBg, borderRadius: 12, paddingHorizontal: 14, height: 44,
+    borderWidth: 1, borderColor: C.divider,
+  },
+  typeDropdownText: { flex: 1, fontSize: 12.5, fontWeight: '700', color: C.brown },
   addBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: C.amber, borderRadius: 12, height: 44,
     ...Platform.select({
       ios:     { shadowColor: C.amber, shadowOpacity: 0.3, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
       android: { elevation: 2 },
     }),
   },
-  addBtnText: { fontSize: 13.5, fontWeight: '800', color: '#FFFFFF' },
+  addBtnText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
 
   activeFilterRow: { paddingHorizontal: 16, marginTop: 10 },
   activeFilterChip: {
@@ -298,32 +382,32 @@ const makeStyles = (C: ColorPalette) => StyleSheet.create({
   countRow: { paddingHorizontal: 16, marginTop: 14, marginBottom: 8 },
   countText: { fontSize: 12.5, fontWeight: '800', color: C.brownMid, opacity: 0.75, letterSpacing: 0.3 },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, gap: 12 },
+  grid: { paddingHorizontal: 16, gap: 12 },
   card: {
-    backgroundColor: C.cardBg, borderRadius: 16, overflow: 'hidden',
+    flexDirection: 'row', backgroundColor: C.cardBg, borderRadius: 16, overflow: 'hidden',
     borderWidth: 1, borderColor: C.divider,
     ...Platform.select({
       ios:     { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
       android: { elevation: 1 },
     }),
   },
-  cardBanner: { height: 100, padding: 10, justifyContent: 'space-between', alignItems: 'flex-end' },
+  cardBanner: { width: 130, alignItems: 'flex-start', justifyContent: 'flex-start', padding: 8 },
   tagBadge: { backgroundColor: 'rgba(0,0,0,0.28)', borderRadius: 20, paddingHorizontal: 9, paddingVertical: 3 },
-  tagBadgeText: { fontSize: 9.5, fontWeight: '800', color: '#FFFFFF', textTransform: 'lowercase' },
-  cardInfo: { padding: 12, gap: 3 },
-  cardDest: { fontSize: 14, fontWeight: '900', color: C.brown },
-  cardTagline: { fontSize: 11, color: C.brownMid, opacity: 0.75 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 4 },
-  ratingValue: { fontSize: 11.5, fontWeight: '800', color: C.brown, marginLeft: 4 },
-  ratingCount: { fontSize: 10.5, color: C.brownMid, opacity: 0.6 },
-  priceText: { fontSize: 11, color: C.brownMid, opacity: 0.8, marginTop: 6 },
-  priceValue: { fontSize: 13.5, fontWeight: '900', color: C.amber },
-  durationText: { fontSize: 10.5, color: C.brownMid, opacity: 0.7, marginTop: 2 },
+  tagBadgeText: { fontSize: 9.5, fontWeight: '800', color: '#FFFFFF' },
+  cardInfo: { flex: 1, minWidth: 0, padding: 9, gap: 1 },
+  cardDest: { fontSize: 13, fontWeight: '900', color: C.brown },
+  cardTagline: { fontSize: 10, color: C.brownMid, opacity: 0.75 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
+  ratingValue: { fontSize: 10.5, fontWeight: '800', color: C.brown, marginLeft: 4 },
+  ratingCount: { fontSize: 9.5, color: C.brownMid, opacity: 0.6 },
+  priceText: { fontSize: 10, color: C.brownMid, opacity: 0.8, marginTop: 3 },
+  priceValue: { fontSize: 12.5, fontWeight: '900', color: C.amber },
+  durationText: { fontSize: 9.5, color: C.brownMid, opacity: 0.7, marginTop: 1 },
   viewBtn: {
-    marginTop: 10, backgroundColor: C.amber, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center', paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: 6, backgroundColor: '#FFF5E0', borderRadius: 18, paddingVertical: 7,
   },
-  viewBtnText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
+  viewBtnText: { fontSize: 11, fontWeight: '800', color: C.amber },
 
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 50, gap: 8 },
   emptyEmoji: { fontSize: 34 },

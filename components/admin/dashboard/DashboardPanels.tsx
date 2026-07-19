@@ -75,7 +75,6 @@ const makePanelStyles = (C: ColorPalette) => StyleSheet.create({
   panel: {
     backgroundColor: C.cardBg, borderRadius: 14, padding: 14,
     marginHorizontal: 16, marginBottom: 12,
-    borderTopWidth: 3, borderTopColor: C.amber,
     ...Platform.select({
       ios:     { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
       android: { elevation: 2 },
@@ -355,28 +354,28 @@ export const RecentBookingsPanel = ({ bookings }: { bookings: BookingRowData[] }
       ) : (
         <View style={rb.table}>
           <View style={rb.headRow}>
-            <Text style={[rb.headCell, { width: 130 }]}>CUSTOMER</Text>
-            <Text style={[rb.headCell, { width: 150 }]}>TOUR</Text>
-            <Text style={[rb.headCell, { width: 70 }]}>DATE</Text>
-            <Text style={[rb.headCell, { width: 80 }]}>AMOUNT</Text>
-            <Text style={[rb.headCell, { width: 90 }]}>STATUS</Text>
+            <Text style={[rb.headCell, { flex: 1.9 }]}>CUSTOMER</Text>
+            <Text style={[rb.headCell, { flex: 2.1 }]}>TOUR</Text>
+            <Text style={[rb.headCell, { flex: 1 }]}>DATE</Text>
+            <Text style={[rb.headCell, { flex: 1.1 }]}>AMOUNT</Text>
+            <Text style={[rb.headCell, { flex: 1.3 }]}>STATUS</Text>
           </View>
           {bookings.map((b, i) => {
             const st = STATUS_STYLE[b.status];
             return (
               <View key={b.ref} style={[rb.row, i === bookings.length - 1 && { borderBottomWidth: 0 }]}>
-                <View style={[{ width: 130 }, rb.customerCell]}>
+                <View style={[{ flex: 1.9 }, rb.customerCell]}>
                   <View style={[rb.avatar, { backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }]}>
                     <Text style={rb.avatarText}>{b.initials}</Text>
                   </View>
-                  <Text style={rb.cellText} numberOfLines={1}>{b.name}</Text>
+                  <Text style={[rb.cellText, { flex: 1 }]} numberOfLines={1}>{b.name}</Text>
                 </View>
-                <Text style={[rb.cellText, { width: 150 }]} numberOfLines={1}>{b.tour}</Text>
-                <Text style={[rb.cellText, { width: 70 }]}>{b.date}</Text>
-                <Text style={[rb.amount, { width: 80 }]}>{b.amount}</Text>
-                <View style={{ width: 90 }}>
+                <Text style={[rb.cellText, { flex: 2.1 }]} numberOfLines={1}>{b.tour}</Text>
+                <Text style={[rb.cellText, { flex: 1 }]} numberOfLines={1}>{b.date}</Text>
+                <Text style={[rb.amount, { flex: 1.1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{b.amount}</Text>
+                <View style={{ flex: 1.3 }}>
                   <View style={[rb.statusBadge, { backgroundColor: st.bg, alignSelf: 'flex-start' }]}>
-                    <Text style={[rb.statusText, { color: st.color }]}>{b.status}</Text>
+                    <Text style={[rb.statusText, { color: st.color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{b.status}</Text>
                   </View>
                 </View>
               </View>
@@ -390,14 +389,14 @@ export const RecentBookingsPanel = ({ bookings }: { bookings: BookingRowData[] }
 
 const makeRecentBookingsStyles = (C: ColorPalette) => StyleSheet.create({
   table: {},
-  headRow: { flexDirection: 'row', borderBottomWidth: 1.5, borderBottomColor: C.divider, paddingBottom: 8, marginBottom: 4 },
-  headCell: { fontSize: 8.5, fontWeight: '800', color: C.brownMid, opacity: 0.65, letterSpacing: 0.4 },
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.divider },
-  customerCell: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  avatar: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  headRow: { flexDirection: 'row', gap: 4, borderBottomWidth: 1.5, borderBottomColor: C.divider, paddingBottom: 8, marginBottom: 4 },
+  headCell: { fontSize: 8.5, fontWeight: '800', color: C.brownMid, opacity: 0.65, letterSpacing: 0.4, minWidth: 0 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.divider },
+  customerCell: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
+  avatar: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   avatarText: { fontSize: 8, fontWeight: '800', color: C.white },
-  cellText: { fontSize: 10.5, color: C.brown },
-  amount: { fontSize: 10.5, fontWeight: '800', color: C.brown },
+  cellText: { fontSize: 10.5, color: C.brown, minWidth: 0 },
+  amount: { fontSize: 10.5, fontWeight: '800', color: C.brown, minWidth: 0 },
   statusBadge: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   statusText: { fontSize: 9, fontWeight: '800' },
 });

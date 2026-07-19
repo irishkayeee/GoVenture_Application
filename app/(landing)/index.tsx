@@ -58,106 +58,6 @@ const useTypingAnimation = (fullText: string, speed: number = 200) => {
 };
 
 
-/* ── Traveler Box ── */
-const TravelerBox = () => {
-  const SIZE = 60;
-  const RING1 = SIZE + 8;
-  const RING2 = SIZE + 16;
-
-  return (
-    <View style={tb.wrapper}>
-      <View style={[tb.ring2, { width: RING2, height: RING2 }]} />
-      <View style={[tb.ring1, { width: RING1, height: RING1 }]} />
-      <View style={[tb.imgWrap, { width: SIZE, height: SIZE }]}>
-        <Image
-          source={require('../../assets/images/traveler.jpg')}
-          style={{ width: SIZE, height: SIZE }}
-          resizeMode="cover"
-        />
-      </View>
-    </View>
-  );
-};
-
-const tb = StyleSheet.create({
-  wrapper: {
-    alignItems:     'center',
-    justifyContent: 'center',
-    width:  84,
-    height: 84,
-  },
-  ring2: {
-    position:        'absolute',
-    backgroundColor: 'transparent',
-    borderWidth:     2,
-    borderColor:     C.amber,
-    borderRadius:    10,
-    opacity:         0.45,
-  },
-  ring1: {
-    position:        'absolute',
-    backgroundColor: 'transparent',
-    borderWidth:     2.5,
-    borderColor:     C.amber,
-    borderRadius:    8,
-  },
-  imgWrap: {
-    overflow:     'hidden',
-    borderWidth:  2,
-    borderColor:  C.white,
-    borderRadius: 6,
-  },
-});
-
-/* ── Beach Circle ── */
-const BeachCircle = () => {
-  const SIZE  = 70;
-  const RING1 = SIZE + 6;
-  const RING2 = SIZE + 13;
-
-  return (
-    <View style={bc.wrapper}>
-      <View style={[bc.ring2, { width: RING2, height: RING2, borderRadius: RING2 / 2 }]} />
-      <View style={[bc.ring1, { width: RING1, height: RING1, borderRadius: RING1 / 2 }]} />
-      <View style={[bc.imgWrap, { width: SIZE, height: SIZE, borderRadius: SIZE / 2 }]}>
-        <Image
-          source={require('../../assets/images/beachh.png')}
-          style={{ width: SIZE, height: SIZE, borderRadius: SIZE / 2 }}
-          resizeMode="cover"
-        />
-      </View>
-    </View>
-  );
-};
-
-const bc = StyleSheet.create({
-  wrapper: {
-    alignItems:     'center',
-    justifyContent: 'center',
-    width:  96,
-    height: 96,
-    marginBottom: 10,
-  },
-  ring2: {
-    position:        'absolute',
-    backgroundColor: 'transparent',
-    borderWidth:     2,
-    borderColor:     C.amber,
-    opacity:         0.45,
-  },
-  ring1: {
-    position:        'absolute',
-    backgroundColor: 'transparent',
-    borderWidth:     2.5,
-    borderColor:     C.amber,
-  },
-  imgWrap: {
-    overflow:    'hidden',
-    borderWidth: 2,
-    borderColor: C.white,
-  },
-});
-
 /* ── Wavy Divider — sizes itself to whatever width it's given ── */
 const WavyDivider = ({ width: W }: { width: number }) => {
   const cityscapeH = Math.min(Math.max(W * 0.62, 220), 340);
@@ -208,10 +108,14 @@ export default function LandingScreen() {
   const s = useMemo(() => createStyles(width), [width]);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: C.bg }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        style={{ backgroundColor: C.bg }}
+        contentContainerStyle={s.scrollContent}
+      >
 
         {/* ── HERO ── */}
         <View style={s.hero}>
@@ -256,23 +160,17 @@ export default function LandingScreen() {
           <View style={s.heroContent}>
             <View style={s.heroTextBlock}>
               <Text style={s.subtitle}>
-                To give you a hassle-free and stress free vacation
+                To give you a hassle-free & stress free vacation
               </Text>
               <TouchableOpacity style={s.cta} activeOpacity={0.85} onPress={() => router.push('/onboarding' as any)}>
                 <Text style={s.ctaText} numberOfLines={1}>EXPLORE NOW</Text>
               </TouchableOpacity>
             </View>
-            <View style={s.bottomCircle}>
-              <BeachCircle />
-              <TravelerBox />
-            </View>
           </View>
         </View>
 
         {/* ── WAVY DIVIDER ── */}
-        <View style={{ marginTop: -(WAVE_H + OFFSET) + 90 }}>
-          <WavyDivider width={width} />
-        </View>
+        <WavyDivider width={width} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -281,10 +179,12 @@ export default function LandingScreen() {
 /* ── Styles — recomputed whenever the window width changes ── */
 function createStyles(width: number) {
   const BIG = width >= 400 ? 66 : width >= 370 ? 60 : 54;
+  const logoW = Math.min(230, Math.max(160, width * 0.56));
 
   return StyleSheet.create({
-    logo: { height: 100, width: Math.min(270, width * 0.72), marginTop: 12, marginBottom: 28 },
-    hero: { overflow: 'visible', position: 'relative' },
+    scrollContent: { flexGrow: 1, justifyContent: 'space-between' },
+    logo: { width: logoW, height: logoW * (593 / 981), marginTop: 12, marginBottom: 28, transform: [{ translateY: -32 }] },
+    hero: { flex: 1, justifyContent: 'center', overflow: 'visible', position: 'relative' },
 
     headlineWrap: {
       alignItems:        'center',
@@ -308,11 +208,11 @@ function createStyles(width: number) {
       gap:               6,
     },
     eyebrowGlyph: {
-      fontSize: 9,
+      fontSize: 11,
       color:    C.amber,
     },
     eyebrowText: {
-      fontSize:      9,
+      fontSize:      11,
       fontWeight:    '800',
       color:         C.amber,
       letterSpacing: 1,
@@ -358,16 +258,6 @@ function createStyles(width: number) {
     },
     heroTextBlock: {
       alignItems: 'center',
-    },
-    bottomCircle: {
-      flexDirection:  'row',
-      alignSelf:      'flex-start',
-      marginLeft:     46,
-      marginTop:      10,
-      alignItems:     'center',
-      justifyContent: 'center',
-      gap:            12,
-      padding:        10,
     },
     subtitle: {
       fontSize:          13,

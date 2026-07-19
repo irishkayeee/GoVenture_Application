@@ -8,7 +8,7 @@ import React, { useMemo, useState } from 'react';
 import { Modal, View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useAppTheme, ColorPalette } from '../ThemeContext';
-import { Account, AccountRole } from './mockData';
+import { AccountRole } from './mockData';
 
 const CloseIcon = ({ color }: { color: string }) => (
   <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
@@ -18,10 +18,20 @@ const CloseIcon = ({ color }: { color: string }) => (
 
 const FieldLabel = ({ children, sm }: { children: React.ReactNode; sm: ReturnType<typeof makeStyles> }) => <Text style={sm.fieldLabel}>{children}</Text>;
 
+export type NewStaffFields = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  contactNumber: string;
+  address: string;
+  password: string;
+  accountType: AccountRole;
+};
+
 type Props = {
   visible: boolean;
   onClose: () => void;
-  onCreate: (account: Account) => void;
+  onCreate: (fields: NewStaffFields) => Promise<boolean>;
 };
 
 export default function AddStaffModal({ visible, onClose, onCreate }: Props) {
@@ -36,6 +46,8 @@ export default function AddStaffModal({ visible, onClose, onCreate }: Props) {
   const [address, setAddress] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const isValid =
     firstName.trim().length > 0 &&
@@ -49,26 +61,27 @@ export default function AddStaffModal({ visible, onClose, onCreate }: Props) {
     setFirstName(''); setLastName(''); setMiddleName('');
     setEmail(''); setContactNumber(''); setAddress('');
     setPassword(''); setConfirmPassword('');
+    setError('');
   };
 
   const handleClose = () => { onClose(); reset(); };
 
-  const handleCreate = () => {
-    if (!isValid) return;
-    const fullName = `${firstName.trim()} ${lastName.trim()}`;
-    const initials = `${firstName.trim()[0] ?? ''}${lastName.trim()[0] ?? ''}`.toUpperCase();
-    const account: Account = {
-      id: `acct${Date.now()}`,
-      name: fullName,
-      initials,
+  const handleCreate = async () => {
+    if (!isValid || saving) return;
+    setSaving(true);
+    setError('');
+    const ok = await onCreate({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
       email: email.trim(),
-      role: accountType as AccountRole,
-      address: address.trim() || '—',
-      cellphone: contactNumber.trim() || '—',
-      createdDate: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-    };
-    onCreate(account);
-    handleClose();
+      contactNumber: contactNumber.trim(),
+      address: address.trim(),
+      password,
+      accountType: accountType as AccountRole,
+    });
+    setSaving(false);
+    if (ok) handleClose();
+    else setError('Could not create account. The email may already be in use.');
   };
 
   return (
@@ -139,6 +152,7 @@ export default function AddStaffModal({ visible, onClose, onCreate }: Props) {
               </View>
             </View>
             <Text style={sm.hintText}>At least 8 characters, with letters and numbers. A username will be generated automatically.</Text>
+            {!!error && <Text style={sm.errorText}>{error}</Text>}
           </ScrollView>
 
           <View style={sm.footerRow}>
@@ -146,12 +160,12 @@ export default function AddStaffModal({ visible, onClose, onCreate }: Props) {
               <Text style={sm.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[sm.createBtn, !isValid && sm.createBtnDisabled]}
+              style={[sm.createBtn, (!isValid || saving) && sm.createBtnDisabled]}
               activeOpacity={0.85}
-              disabled={!isValid}
+              disabled={!isValid || saving}
               onPress={handleCreate}
             >
-              <Text style={sm.createText}>Create Account</Text>
+              <Text style={sm.createText}>{saving ? 'Creating...' : 'Create Account'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -186,6 +200,7 @@ const makeStyles = (C: ColorPalette) => StyleSheet.create({
   typeBtnText: { fontSize: 12.5, fontWeight: '700', color: C.brownMid },
   typeBtnTextSelected: { color: '#12946F', fontWeight: '900' },
   hintText: { fontSize: 10, color: C.brownMid, opacity: 0.65, marginTop: 10, lineHeight: 15 },
+  errorText: { fontSize: 11, color: '#D64C1A', fontWeight: '700', marginTop: 10, marginHorizontal: 10 },
 
   footerRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
   cancelBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 13, borderRadius: 22, borderWidth: 1.5, borderColor: C.divider },

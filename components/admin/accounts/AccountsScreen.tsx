@@ -5,14 +5,15 @@
  * tapping an account row opens AccountDetailModal.
  */
 
-import React, { useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { useAppTheme, ColorPalette } from '../ThemeContext';
-import { ACCOUNTS, Account, AccountRole, AVATAR_COLORS } from './mockData';
-import AddStaffModal from './AddStaffModal';
+import { Account, AccountRole, AVATAR_COLORS } from './mockData';
+import { ACCOUNTS_LIST_API_URL, ACCOUNT_CREATE_API_URL, ACCOUNT_UPDATE_API_URL } from '@/constants/api';
+import AddStaffModal, { NewStaffFields } from './AddStaffModal';
 import AccountDetailModal from './AccountDetailModal';
 
 const ROLE_FILTERS: { value: AccountRole | ''; label: string }[] = [
@@ -69,11 +70,30 @@ const AccountRow = ({ account, index, onPress }: { account: Account; index: numb
 export default function AccountsScreen() {
   const { C } = useAppTheme();
   const as = useMemo(() => makeStyles(C), [C]);
-  const [accounts, setAccounts] = useState<Account[]>(ACCOUNTS);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<AccountRole | ''>('');
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+
+  const loadAccounts = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(ACCOUNTS_LIST_API_URL);
+      const result = await res.json();
+      if (result.status === 'success') setAccounts(result.data);
+      else setError(result.message || 'Failed to load accounts.');
+    } catch {
+      setError("Can't connect to the server. Please check if XAMPP is running.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadAccounts(); }, [loadAccounts]);
 
   const stats = useMemo(() => ({
     total:  accounts.length,
@@ -91,9 +111,34 @@ export default function AccountsScreen() {
     });
   }, [accounts, query, roleFilter]);
 
-  const handleCreate = (account: Account) => setAccounts((prev) => [account, ...prev]);
-  const handleSaveDetail = (id: string, patch: Partial<Account>) =>
+  const handleCreate = async (fields: NewStaffFields): Promise<boolean> => {
+    try {
+      const res = await fetch(ACCOUNT_CREATE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') return false;
+      setAccounts((prev) => [result.data, ...prev]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleSaveDetail = async (id: string, patch: Partial<Account>) => {
     setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+    try {
+      await fetch(ACCOUNT_UPDATE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, address: patch.address, cellphone: patch.cellphone }),
+      });
+    } catch {
+      // Local state already updated optimistically; a silent retry-on-next-load is acceptable here.
+    }
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -173,7 +218,17 @@ export default function AccountsScreen() {
           </View>
 
           <View style={as.list}>
-            {filtered.length === 0 ? (
+            {loading ? (
+              <View style={as.emptyWrap}>
+                <ActivityIndicator color={C.amber} />
+              </View>
+            ) : error ? (
+              <View style={as.emptyWrap}>
+                <Text style={as.emptyEmoji}>⚠️</Text>
+                <Text style={as.emptyText}>{error}</Text>
+                <TouchableOpacity onPress={loadAccounts}><Text style={[as.emptyText, { color: C.amber, fontWeight: '800' }]}>Tap to retry</Text></TouchableOpacity>
+              </View>
+            ) : filtered.length === 0 ? (
               <View style={as.emptyWrap}>
                 <Text style={as.emptyEmoji}>🔍</Text>
                 <Text style={as.emptyText}>No accounts match your search.</Text>

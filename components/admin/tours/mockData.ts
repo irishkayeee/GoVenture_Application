@@ -5,12 +5,32 @@
 
 export type TourTag = 'charter' | 'custom';
 export type TourStatus = 'Active' | 'Draft' | 'Inactive';
+export type TourType = 'charter_flight' | 'cruise' | 'land_tour' | 'custom';
+
+export const TOUR_TYPE_META: Record<TourType, { label: string; color: string }> = {
+  charter_flight: { label: 'Charter Flight', color: '#2196F3' },
+  cruise:         { label: 'Cruise',         color: '#0D3B66' },
+  land_tour:      { label: 'Land Tour',      color: '#C9A84C' },
+  custom:         { label: 'Custom',         color: '#9C27B0' },
+};
+
+export const TOUR_TYPE_TABS: { value: TourType | ''; label: string }[] = [
+  { value: '',               label: 'All Packages' },
+  { value: 'charter_flight', label: 'Charter Flight' },
+  { value: 'cruise',         label: 'Cruise' },
+  { value: 'land_tour',      label: 'Land Tour' },
+  { value: 'custom',         label: 'Custom Tours' },
+];
 
 export type TourItineraryDay = {
-  day:          number;
-  time:         string;
-  title:        string;
-  description:  string;
+  day:            number;
+  time:           string;
+  title:          string;
+  description:    string;
+  location?:      string;
+  meals?:         string[];
+  accommodation?: string;
+  photoUrl?:      string | null;
 };
 
 export type TourReview = {
@@ -21,12 +41,31 @@ export type TourReview = {
   text:     string;
 };
 
+export type TourDateBatch = {
+  id:               string;
+  startDate:        string;
+  endDate:          string;
+  slots:            number;
+  adultPrice:       number;
+  childPrice:       number;
+  additionalPrice:  number;
+  downpayment:      number;
+  available:        boolean;
+};
+
+export type TourAdditionalCharge = {
+  id:     string;
+  label:  string;
+  amount: number;
+};
+
 export type TourPackage = {
   id:            string;
   destination:   string;
   tagline:       string;
   tag:           TourTag;
   secondaryTag:  string;
+  tourType:      TourType;
   rating:        number;
   reviewCount:   number;
   priceFrom:     number;
@@ -34,8 +73,16 @@ export type TourPackage = {
   status:        TourStatus;
   gradient:      [string, string];
   fullLocation:  string;
+  tourCode?:     string;
+  name?:         string;
   description:   string;
   itinerary:     TourItineraryDay[];
+  imageUrl?:     string | null;
+  dateBatches?:  TourDateBatch[];
+  additionalCharges?: TourAdditionalCharge[];
+  inclusions?:   string[];
+  exclusions?:   string[];
+  reviews?:      TourReview[];
 };
 
 export const DEFAULT_INCLUSIONS = [
@@ -61,7 +108,7 @@ export const DEFAULT_REVIEWS: TourReview[] = [
 export const TOUR_PACKAGES: TourPackage[] = [
   {
     id: '1', destination: 'Bali, Indonesia', tagline: 'Island of the Gods',
-    tag: 'charter', secondaryTag: 'overseas', rating: 4.8, reviewCount: 4,
+    tag: 'charter', secondaryTag: 'overseas', tourType: 'land_tour', rating: 4.8, reviewCount: 4,
     priceFrom: 25999, duration: '5 Days / 4 Nights', status: 'Active',
     gradient: ['#1B3A66', '#2E5C94'], fullLocation: 'Denpasar, Bali, Indonesia',
     description: 'Discover the cultural and natural beauty of Bali with our immersive full-day adventure. Wander through iconic landmarks, experience authentic local hospitality along the way, and create unforgettable memories that last a lifetime.',
@@ -74,7 +121,7 @@ export const TOUR_PACKAGES: TourPackage[] = [
   },
   {
     id: '2', destination: 'Bangkok, Thailand', tagline: 'City of Angels',
-    tag: 'custom', secondaryTag: 'overseas', rating: 4.8, reviewCount: 2,
+    tag: 'custom', secondaryTag: 'overseas', tourType: 'charter_flight', rating: 4.8, reviewCount: 2,
     priceFrom: 18999, duration: '5 Days / 4 Nights', status: 'Active',
     gradient: ['#1D6FB8', '#4FA8E0'], fullLocation: 'Bangkok, Thailand',
     description: 'Immerse yourself in the vibrant energy of Bangkok — from golden temples to bustling floating markets. This package blends culture, food, and city life into one unforgettable escape.',
@@ -87,7 +134,7 @@ export const TOUR_PACKAGES: TourPackage[] = [
   },
   {
     id: '3', destination: 'Boracay Island', tagline: 'White Beach Paradise',
-    tag: 'charter', secondaryTag: 'domestic', rating: 4.8, reviewCount: 2,
+    tag: 'charter', secondaryTag: 'domestic', tourType: 'cruise', rating: 4.8, reviewCount: 2,
     priceFrom: 15999, duration: '4 Days / 3 Nights', status: 'Active',
     gradient: ['#5B21A6', '#8B4FD1'], fullLocation: 'Boracay Island, Aklan, Philippines',
     description: 'Sink your feet into the powder-white sands of Boracay. This getaway is built for relaxation — turquoise water, island hopping, and unforgettable sunsets on White Beach.',
@@ -99,7 +146,7 @@ export const TOUR_PACKAGES: TourPackage[] = [
   },
   {
     id: '4', destination: 'Da Nang, Vietnam', tagline: 'The Coastal Dream',
-    tag: 'charter', secondaryTag: 'overseas', rating: 4.8, reviewCount: 2,
+    tag: 'charter', secondaryTag: 'overseas', tourType: 'land_tour', rating: 4.8, reviewCount: 2,
     priceFrom: 18999, duration: '5 Days / 4 Nights', status: 'Active',
     gradient: ['#1F5C42', '#3E8A64'], fullLocation: 'Da Nang, Vietnam',
     description: 'Explore Vietnam’s coastal gem — golden bridges, ancient towns, and pristine beaches. Da Nang offers the perfect mix of culture, cuisine, and seaside relaxation.',
@@ -112,7 +159,7 @@ export const TOUR_PACKAGES: TourPackage[] = [
   },
   {
     id: '5', destination: 'Tokyo, Japan', tagline: 'Neon Lights & Zen Gardens',
-    tag: 'custom', secondaryTag: 'overseas', rating: 4.8, reviewCount: 2,
+    tag: 'custom', secondaryTag: 'overseas', tourType: 'custom', rating: 4.8, reviewCount: 2,
     priceFrom: 32999, duration: '6 Days / 5 Nights', status: 'Active',
     gradient: ['#C9A227', '#E0C34F'], fullLocation: 'Tokyo, Japan',
     description: 'Experience the striking contrast of Tokyo — futuristic skylines beside centuries-old shrines. This tour covers the city’s icons plus quieter moments of calm.',
@@ -126,7 +173,7 @@ export const TOUR_PACKAGES: TourPackage[] = [
   },
   {
     id: '6', destination: 'Cebu, Philippines', tagline: 'Queen City of the South',
-    tag: 'charter', secondaryTag: 'domestic', rating: 4.8, reviewCount: 1,
+    tag: 'charter', secondaryTag: 'domestic', tourType: 'cruise', rating: 4.8, reviewCount: 1,
     priceFrom: 14500, duration: '4 Days / 3 Nights', status: 'Active',
     gradient: ['#B8871F', '#D9A83E'], fullLocation: 'Cebu City, Cebu, Philippines',
     description: 'From historic landmarks to swimming with whale sharks, Cebu packs adventure and heritage into one dynamic escape in the heart of the Visayas.',
@@ -138,7 +185,7 @@ export const TOUR_PACKAGES: TourPackage[] = [
   },
   {
     id: '7', destination: 'Kyoto, Japan', tagline: 'City of Ten Thousand Shrines',
-    tag: 'custom', secondaryTag: 'overseas', rating: 4.8, reviewCount: 1,
+    tag: 'custom', secondaryTag: 'overseas', tourType: 'custom', rating: 4.8, reviewCount: 1,
     priceFrom: 35200, duration: '5 Days / 4 Nights', status: 'Active',
     gradient: ['#B85F17', '#D17B2E'], fullLocation: 'Kyoto, Japan',
     description: 'Step back into old Japan among Kyoto’s bamboo groves, geisha districts, and thousands of vermillion torii gates. A tour built for culture and quiet beauty.',
@@ -151,7 +198,7 @@ export const TOUR_PACKAGES: TourPackage[] = [
   },
   {
     id: '8', destination: 'Phuket, Thailand', tagline: 'Pearl of the Andaman',
-    tag: 'charter', secondaryTag: 'overseas', rating: 4.8, reviewCount: 1,
+    tag: 'charter', secondaryTag: 'overseas', tourType: 'charter_flight', rating: 4.8, reviewCount: 1,
     priceFrom: 11000, duration: '5 Days / 4 Nights', status: 'Active',
     gradient: ['#0F8C7C', '#2FBFA8'], fullLocation: 'Phuket, Thailand',
     description: 'Turquoise waters, limestone cliffs, and vibrant nightlife — Phuket delivers the best of Thailand’s Andaman coast in one relaxed island getaway.',
@@ -163,9 +210,6 @@ export const TOUR_PACKAGES: TourPackage[] = [
     ],
   },
 ];
-
-export const CATEGORY_OPTIONS = ['Beach & Island', 'Cultural & Heritage', 'City & Urban', 'Adventure & Nature'];
-export const FLIGHT_TYPE_OPTIONS = ['Round Trip', 'One Way', 'Multi-City'];
 
 export function formatPeso(n: number): string {
   return `₱${n.toLocaleString('en-US')}`;

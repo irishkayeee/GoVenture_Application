@@ -37,9 +37,22 @@ export const validateEmail = (email: string): string | undefined => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email address.';
 };
 
+// Used at login — only checks that something was typed in.
+// (Complexity rules are enforced at sign-up time, not re-checked on every login,
+// since a correct existing password shouldn't be rejected by client-side policy.)
 export const validatePassword = (password: string): string | undefined => {
   if (!password) return 'Password is required.';
-  if (password.length < 6) return 'Password must be at least 6 characters.';
+};
+
+// Used at sign-up — enforces the actual password policy.
+export const validatePasswordStrength = (password: string): string | undefined => {
+  if (!password) return 'Password is required.';
+  if (/\s/.test(password)) return 'Password must not contain spaces.';
+  if (password.length < 8) return 'Password must be at least 8 characters.';
+  if (!/[A-Z]/.test(password)) return 'Password must include an uppercase letter.';
+  if (!/[a-z]/.test(password)) return 'Password must include a lowercase letter.';
+  if (!/[0-9]/.test(password)) return 'Password must include a number.';
+  if (!/[^A-Za-z0-9]/.test(password)) return 'Password must include a special character.';
 };
 
 export const validateConfirmPass = (pass: string, confirm: string): string | undefined => {
@@ -170,6 +183,21 @@ const inp = StyleSheet.create({
   input:     { flex: 1, fontSize: 14, color: C.brown, fontWeight: '500' },
   eyeBtn:    { padding: 5 },
   errorText: { fontSize: 11, color: C.error, marginTop: 3, marginLeft: 4 },
+});
+
+/* ── OR Divider ── */
+export const OrDivider = () => (
+  <View style={or.row}>
+    <View style={or.line} />
+    <Text style={or.text}>OR</Text>
+    <View style={or.line} />
+  </View>
+);
+
+const or = StyleSheet.create({
+  row:  { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  line: { flex: 1, height: 1, backgroundColor: C.divider },
+  text: { fontSize: 11.5, color: C.brownMid, opacity: 0.7, fontWeight: '700', marginHorizontal: 10, letterSpacing: 0.5 },
 });
 
 /* ── General Error Banner ── */
