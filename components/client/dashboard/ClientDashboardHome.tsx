@@ -7,13 +7,18 @@
  * Two-column on wide screens (tablet/web), single-column on phones.
  */
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform, useWindowDimensions, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C, HERO_GRADIENT } from '../theme';
-import { STAT_CARDS, StatCard, FAVORITE_TOURS, FavoriteTour, RECOMMENDED_TOURS, RecommendedTour, UPCOMING_TRIP } from './mockData';
+import { StatCard, FavoriteTour, RecommendedTour } from './mockData';
+import { useBookings, Booking } from '../bookings/BookingsContext';
+import { fetchTours, Tour } from '../tours/mockData';
+import { useFavorites } from '../tours/FavoritesContext';
+
+const money = (n: number) => `₱${n.toLocaleString('en-US')}`;
 
 const WIDE_BREAKPOINT = 900;
 
@@ -241,17 +246,23 @@ function CountdownBox({ value, label }: { value: number; label: string }) {
   );
 }
 
-function UpcomingTripCard({ onViewAll }: { onViewAll: () => void }) {
-  const { days, hours, mins, secs } = useCountdown(UPCOMING_TRIP.startISO);
+function UpcomingTripCard({ trip, onViewAll }: { trip: Booking; onViewAll: () => void }) {
+  const { days, hours, mins, secs } = useCountdown(trip.dateFrom);
   return (
     <Section title="Upcoming Trip" subtitle="Your next adventure is almost here" viewAllLabel="View all" onViewAll={onViewAll}>
       <View style={ut.row}>
-        <View style={ut.thumb}><Text style={{ fontSize: 26 }}>{UPCOMING_TRIP.emoji}</Text></View>
+        <View style={ut.thumb}>
+          {trip.imageUrl ? (
+            <Image source={{ uri: trip.imageUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+          ) : (
+            <Text style={{ fontSize: 26 }}>🌏</Text>
+          )}
+        </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={ut.dest} numberOfLines={1}>{UPCOMING_TRIP.destination}</Text>
-          <Text style={ut.venue} numberOfLines={1}>{UPCOMING_TRIP.venue}</Text>
-          <Text style={ut.dates}>{formatShort(UPCOMING_TRIP.startISO)} – {formatShort(UPCOMING_TRIP.endISO)}</Text>
-          <Text style={ut.travelers}>{UPCOMING_TRIP.travelers} Travelers</Text>
+          <Text style={ut.dest} numberOfLines={1}>{trip.destination}</Text>
+          <Text style={ut.venue} numberOfLines={1}>{trip.location}</Text>
+          <Text style={ut.dates}>{formatShort(trip.dateFrom)} – {formatShort(trip.dateTo)}</Text>
+          <Text style={ut.travelers}>{trip.travelers} Travelers</Text>
         </View>
       </View>
       <View style={ut.countdownRow}>
@@ -260,6 +271,17 @@ function UpcomingTripCard({ onViewAll }: { onViewAll: () => void }) {
         <CountdownBox value={mins} label="Mins" />
         <CountdownBox value={secs} label="Secs" />
       </View>
+    </Section>
+  );
+}
+
+function NoUpcomingTripCard({ onBrowse }: { onBrowse: () => void }) {
+  return (
+    <Section title="Upcoming Trip" subtitle="Your next adventure is almost here">
+      <Text style={sec.emptyText}>No upcoming trips yet — browse tours to plan your next adventure!</Text>
+      <TouchableOpacity style={rc.btn} activeOpacity={0.85} onPress={onBrowse}>
+        <Text style={rc.btnText}>Browse Tours</Text>
+      </TouchableOpacity>
     </Section>
   );
 }
@@ -273,19 +295,93 @@ type Props = {
 export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigate }: Props) {
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
+  const { bookings } = useBookings();
+  const { favoriteIds } = useFavorites();
 
-  const sidebar = (
-    <UpcomingTripCard onViewAll={() => onNavigate('bookings')} />
+  const [tours, setTours] = useState<Tour[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchTours()
+      .then((data) => { if (!cancelled) setTours(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const recommended: RecommendedTour[] = useMemo(
+    () =>
+      [...tours]
+        .sort((a, b) => b.rating - a.rating || b.reviewCount - a.reviewCount)
+        .slice(0, 3)
+        .map((t) => ({ id: t.id, destination: t.destination, pricePerPerson: money(t.pricePerPerson), emoji: t.emoji })),
+    [tours]
+  );
+
+  const favoriteTours: FavoriteTour[] = useMemo(
+    () =>
+      tours
+        .filter((t) => favoriteIds.has(t.id))
+        .map((t) => ({ id: t.id, destination: t.destination, rating: t.rating, reviews: t.reviewCount, pricePerPerson: money(t.pricePerPerson), emoji: t.emoji })),
+    [tours, favoriteIds]
+  );
+
+  const upcomingTrip = useMemo(() => {
+    const upcoming = bookings
+      .filter((b) => b.status === 'Upcoming' || b.status === 'Ongoing')
+      .sort((a, b) => new Date(a.dateFrom).getTime() - new Date(b.dateFrom).getTime());
+    return upcoming[0] ?? null;
+  }, [bookings]);
+
+  const placesVisited = useMemo(
+    () => new Set(bookings.filter((b) => b.status === 'Completed').map((b) => b.destination)).size,
+    [bookings]
+  );
+  const pendingPayments = useMemo(
+    () => bookings.filter((b) => b.paymentStatus === 'Pending').reduce((sum, b) => sum + b.balanceDue, 0),
+    [bookings]
+  );
+  const upcomingCount = useMemo(
+    () => bookings.filter((b) => b.status === 'Upcoming' || b.status === 'Ongoing').length,
+    [bookings]
+  );
+
+  const statCards: StatCard[] = [
+    {
+      key: 'tours', label: 'Upcoming Tours', value: String(upcomingCount), icon: 'calendar',
+      iconBg: '#FFF3E8', iconColor: C.amber,
+      trend: upcomingCount > 0 ? 'Get ready!' : 'Book your first tour', trendPositive: true,
+    },
+    {
+      key: 'bookings', label: 'Total Bookings', value: String(bookings.length), icon: 'clipboard',
+      iconBg: '#E8F5E9', iconColor: C.success,
+      trend: 'All-time', trendPositive: true,
+    },
+    {
+      key: 'places', label: 'Places Visited', value: String(placesVisited), icon: 'pin',
+      iconBg: '#EDE7F6', iconColor: '#9C27B0',
+      trend: placesVisited > 0 ? 'Your journey so far' : 'Your journey begins!', trendPositive: true,
+    },
+    {
+      key: 'payments', label: 'Pending Payments', value: money(pendingPayments), icon: 'card',
+      iconBg: '#FCE4E1', iconColor: C.danger,
+      trend: pendingPayments > 0 ? 'Awaiting payment' : 'All settled', trendPositive: pendingPayments === 0,
+    },
+  ];
+
+  const sidebar = upcomingTrip ? (
+    <UpcomingTripCard trip={upcomingTrip} onViewAll={() => onNavigate('bookings')} />
+  ) : (
+    <NoUpcomingTripCard onBrowse={() => onNavigate('tours')} />
   );
 
   const main = (
     <>
       <Section title="My Favorites" subtitle="Tours you've saved for later" onViewAll={() => onNavigate('tours')}>
-        {FAVORITE_TOURS.length === 0 ? (
+        {favoriteTours.length === 0 ? (
           <Text style={sec.emptyText}>No favorites yet — tap the heart on a tour to save it here.</Text>
         ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={fc.grid}>
-            {FAVORITE_TOURS.map((f) => (
+            {favoriteTours.map((f) => (
               <FavoriteCard key={f.id} tour={f} onPress={() => onNavigate('tours')} />
             ))}
           </ScrollView>
@@ -293,9 +389,13 @@ export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigat
       </Section>
 
       <Section title="Recommended Tours" subtitle="Handpicked for your next trip" onViewAll={() => onNavigate('tours')}>
-        {RECOMMENDED_TOURS.map((t) => (
-          <RecommendedRow key={t.id} tour={t} onBook={() => onNavigate('tours')} />
-        ))}
+        {recommended.length === 0 ? (
+          <Text style={sec.emptyText}>No tours available right now — check back soon.</Text>
+        ) : (
+          recommended.map((t) => (
+            <RecommendedRow key={t.id} tour={t} onBook={() => onNavigate('tours')} />
+          ))
+        )}
       </Section>
     </>
   );
@@ -306,7 +406,7 @@ export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigat
         <DashboardHero name={name} />
 
         <View style={st.grid}>
-          {STAT_CARDS.map((c) => <StatCardItem key={c.key} card={c} />)}
+          {statCards.map((c) => <StatCardItem key={c.key} card={c} />)}
         </View>
 
         {isWide ? (
@@ -439,7 +539,7 @@ const rc = StyleSheet.create({
 const ut = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   thumb: {
-    width: 52, height: 52, borderRadius: 12, flexShrink: 0,
+    width: 52, height: 52, borderRadius: 12, flexShrink: 0, overflow: 'hidden',
     backgroundColor: C.amber, alignItems: 'center', justifyContent: 'center',
   },
   dest: { fontSize: 13, fontWeight: '900', color: C.brown },

@@ -2,12 +2,11 @@
  * PlanTripScreen.tsx
  * Client "Plan a Trip" tab — a list of submitted trip requests (empty state
  * until the first one), and a multi-section form that builds a live summary
- * as you fill it in. No backend yet, so "Generate My Itinerary" just saves
- * the request locally as a "submitted" card rather than fabricating an
- * actual AI-built itinerary.
+ * as you fill it in. Requests are persisted server-side (trip_request_create)
+ * so the travel team can see them, rather than living only in local state.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Platform, useWindowDimensions, ActivityIndicator,
@@ -21,6 +20,8 @@ import {
   PersonalizedTrip, TripFormState, DEFAULT_FORM,
   BUDGET_PRESETS, TRIP_PACE_OPTIONS, ACCOMMODATION_OPTIONS, INTEREST_OPTIONS,
 } from './mockData';
+import { useAuth } from '@/components/auth/AuthContext';
+import { TRIP_REQUESTS_LIST_API_URL, TRIP_REQUEST_CREATE_API_URL, TRIP_REQUEST_REMOVE_API_URL } from '@/constants/api';
 
 const WIDE_BREAKPOINT = 900;
 const GRADIENT = ['#C46B1A', '#DC8B34'] as const;
@@ -59,7 +60,6 @@ const CheckIcon = () => (
 );
 
 const money = (n: number) => `₱${n.toLocaleString('en-US')}`;
-const genId = () => `pt-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
@@ -114,15 +114,25 @@ function TripCard({ trip, onRemove }: { trip: PersonalizedTrip; onRemove: () => 
 export default function PlanTripScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
+  const { user } = useAuth();
 
   const [view, setView] = useState<'list' | 'form'>('list');
   const [trips, setTrips] = useState<PersonalizedTrip[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<TripFormState>(DEFAULT_FORM);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  const loadTrips = useCallback(() => {
+    if (!user) return;
+    setLoading(true);
+    fetch(`${TRIP_REQUESTS_LIST_API_URL}&userId=${user.id}`)
+      .then((res) => res.json())
+      .then((result) => { if (result.status === 'success') setTrips(result.data); })
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  useEffect(() => { loadTrips(); }, [loadTrips]);
 
   const set = <K extends keyof TripFormState>(key: K, value: TripFormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -139,34 +149,58 @@ export default function PlanTripScreen() {
     setView('form');
   };
 
-  const generateItinerary = () => {
+  const generateItinerary = async () => {
     if (!form.destination.trim()) {
       setError('Please tell us where you want to go.');
       return;
     }
+    if (!user) return;
     setError('');
     setGenerating(true);
-    timerRef.current = setTimeout(() => {
-      const trip: PersonalizedTrip = {
-        id: genId(),
-        destination: form.destination.trim(),
-        dateFrom: form.dateFrom.trim(),
-        dateTo: form.dateTo.trim(),
-        travelers: form.travelers,
-        budgetRange: form.customBudget.trim() ? money(Number(form.customBudget) || 0) : form.budgetRange,
-        tripPace: form.tripPace,
-        accommodation: form.accommodation,
-        interests: form.interests,
-        specialRequests: form.specialRequests.trim(),
-        createdAt: new Date().toISOString(),
-      };
-      setTrips((prev) => [trip, ...prev]);
-      setGenerating(false);
+    try {
+      const res = await fetch(TRIP_REQUEST_CREATE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          destination: form.destination.trim(),
+          dateFrom: form.dateFrom.trim(),
+          dateTo: form.dateTo.trim(),
+          travelers: form.travelers,
+          budgetRange: form.customBudget.trim() ? money(Number(form.customBudget) || 0) : form.budgetRange,
+          tripPace: form.tripPace,
+          accommodation: form.accommodation,
+          interests: form.interests,
+          specialRequests: form.specialRequests.trim(),
+        }),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') {
+        setError(result.message || 'Failed to submit your request. Please try again.');
+        return;
+      }
+      setTrips((prev) => [result.data, ...prev]);
       setView('list');
-    }, 900);
+    } catch {
+      setError('Failed to submit your request. Please check your connection and try again.');
+    } finally {
+      setGenerating(false);
+    }
   };
 
-  const removeTrip = (id: string) => setTrips((prev) => prev.filter((t) => t.id !== id));
+  const removeTrip = async (id: string) => {
+    if (!user) return;
+    setTrips((prev) => prev.filter((t) => t.id !== id));
+    try {
+      await fetch(TRIP_REQUEST_REMOVE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, id }),
+      });
+    } catch {
+      // Local state already updated optimistically.
+    }
+  };
 
   const summaryDates = form.dateFrom || form.dateTo ? `${form.dateFrom || '—'} – ${form.dateTo || '—'}` : '—';
   const summaryBudget = form.customBudget.trim() ? money(Number(form.customBudget) || 0) : (form.budgetRange || 'Not set');
@@ -401,7 +435,11 @@ export default function PlanTripScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 16 }}>
-        {trips.length === 0 ? (
+        {loading ? (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator color={C.amber} />
+          </View>
+        ) : trips.length === 0 ? (
           <View style={lv.emptyCard}>
             <Text style={{ fontSize: 44 }}>🗺️</Text>
             <Text style={lv.emptyTitle}>No personalized trips yet.</Text>

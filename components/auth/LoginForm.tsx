@@ -17,6 +17,7 @@ import {
   validateEmail, validatePassword,
 } from './Authshared';
 import ForgotPasswordModal from './ForgotPasswordModal';
+import { useAuth } from './AuthContext';
 
 interface LoginFormProps {
   onSwitchToSignUp: () => void;
@@ -25,6 +26,7 @@ interface LoginFormProps {
 
 export default function LoginForm({ onSwitchToSignUp, onSuccess }: LoginFormProps) {
   const router = useRouter();
+  const { login } = useAuth();
 
   const [email,      setEmail]      = useState('');
   const [password,   setPassword]   = useState('');
@@ -62,6 +64,15 @@ export default function LoginForm({ onSwitchToSignUp, onSuccess }: LoginFormProp
       }
 
       const isAdmin = result.data.role === 'admin';
+
+      await login({
+        id:        String(result.data.id),
+        firstName: result.data.first_name,
+        lastName:  result.data.last_name,
+        fullName:  result.data.full_name,
+        email:     result.data.email,
+        role:      result.data.role,
+      });
 
       // Close the modal first, then navigate
       onSuccess?.();

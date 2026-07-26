@@ -8,10 +8,10 @@
 
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Share,
-  StyleSheet, Platform, useWindowDimensions,
+  View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Share, Image,
+  StyleSheet, Platform, useWindowDimensions, ActivityIndicator,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
@@ -117,7 +117,13 @@ function BookingRow({ booking, onViewDetails, onCancel, menuOpenId, setMenuOpenI
   const menuOpen = menuOpenId === booking.id;
   return (
     <View style={r.card}>
-      <View style={r.banner}><Text style={{ fontSize: 30 }}>{booking.emoji}</Text></View>
+      <View style={r.banner}>
+        {booking.imageUrl ? (
+          <Image source={{ uri: booking.imageUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+        ) : (
+          <Text style={{ fontSize: 30 }}>🌏</Text>
+        )}
+      </View>
       <View style={{ flex: 1, minWidth: 0, padding: 14 }}>
         <View style={r.topRow}>
           <Text style={r.dest} numberOfLines={1}>{booking.destination}</Text>
@@ -166,7 +172,11 @@ function BookingGridCard({ booking, onViewDetails }: { booking: Booking; onViewD
   return (
     <View style={g.card}>
       <View style={g.banner}>
-        <Text style={{ fontSize: 30 }}>{booking.emoji}</Text>
+        {booking.imageUrl ? (
+          <Image source={{ uri: booking.imageUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+        ) : (
+          <Text style={{ fontSize: 30 }}>🌏</Text>
+        )}
         <View style={[r.statusPill, g.statusPill, { backgroundColor: statusColor(booking.status) }]}>
           <Text style={r.statusPillText}>{booking.status}</Text>
         </View>
@@ -247,6 +257,7 @@ function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onC
 
   return (
     <Modal visible={!!booking} transparent animationType="fade" onRequestClose={onClose}>
+      <SafeAreaProvider>
       <View style={dt.overlay}>
         <View style={[dt.card, { maxHeight: '90%' }]}>
           <LinearGradient colors={GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={dt.header}>
@@ -289,6 +300,7 @@ function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onC
           </View>
         </View>
       </View>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -296,7 +308,7 @@ function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onC
 export default function MyBookingsScreen({ onBrowseTours }: { onBrowseTours: () => void }) {
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
-  const { bookings, updateBookingStatus } = useBookings();
+  const { bookings, loading, error, refresh, cancelBooking } = useBookings();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | BookingStatus>('All');
@@ -371,7 +383,17 @@ export default function MyBookingsScreen({ onBrowseTours }: { onBrowseTours: () 
         </View>
 
         <View style={{ paddingHorizontal: 16, marginTop: 14 }}>
-          {filtered.length === 0 ? (
+          {loading ? (
+            <View style={sb.emptyWrap}>
+              <ActivityIndicator color={C.amber} />
+            </View>
+          ) : error ? (
+            <View style={sb.emptyWrap}>
+              <Text style={{ fontSize: 36 }}>⚠️</Text>
+              <Text style={sb.emptyTitle}>{error}</Text>
+              <TouchableOpacity onPress={refresh}><Text style={[sb.emptyText, { color: C.amber, fontWeight: '800' }]}>Tap to retry</Text></TouchableOpacity>
+            </View>
+          ) : filtered.length === 0 ? (
             <View style={sb.emptyWrap}>
               <Text style={{ fontSize: 36 }}>🧳</Text>
               <Text style={sb.emptyTitle}>No bookings found</Text>
@@ -384,7 +406,7 @@ export default function MyBookingsScreen({ onBrowseTours }: { onBrowseTours: () 
                   key={b.id}
                   booking={b}
                   onViewDetails={() => setDetailBooking(b)}
-                  onCancel={() => updateBookingStatus(b.id, 'Cancelled')}
+                  onCancel={() => cancelBooking(b.id)}
                   menuOpenId={menuOpenId}
                   setMenuOpenId={setMenuOpenId}
                 />

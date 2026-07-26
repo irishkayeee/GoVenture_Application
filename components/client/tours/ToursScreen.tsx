@@ -5,19 +5,20 @@
  * opens TourDetailModal; "Book Now" jumps straight into BookingWizardModal.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Modal,
-  StyleSheet, Platform, useWindowDimensions, DimensionValue,
+  StyleSheet, Platform, useWindowDimensions, DimensionValue, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C } from '../theme';
 import ClientPageHero from '../ClientPageHero';
-import { TOURS, Tour, INCLUDE_OPTIONS, IncludeOption, SortOption, DepartureOption } from './mockData';
+import { fetchTours, Tour, INCLUDE_OPTIONS, IncludeOption, SortOption, DepartureOption } from './mockData';
 import TourDetailModal from './TourDetailModal';
 import BookingWizardModal from './BookingWizardModal';
+import { useFavorites } from './FavoritesContext';
 
 const WIDE_BREAKPOINT = 900;
 const PRICE_STOPS = [15000, 25000, 35000, 50000, Infinity];
@@ -247,22 +248,30 @@ export default function ToursScreen({ initialSearch }: Props) {
   const [travelersOpen, setTravelersOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const { favoriteIds, toggleFavorite } = useFavorites();
 
   const [detailTour, setDetailTour] = useState<Tour | null>(null);
   const [bookingTour, setBookingTour] = useState<Tour | null>(null);
   const [bookingPrefill, setBookingPrefill] = useState<{ departure: DepartureOption; travelers: number } | null>(null);
 
-  const toggleFavorite = (id: string) =>
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  const [tours, setTours] = useState<Tour[]>([]);
+  const [toursLoading, setToursLoading] = useState(true);
+  const [toursError, setToursError] = useState('');
+
+  const loadTours = () => {
+    setToursLoading(true);
+    setToursError('');
+    fetchTours()
+      .then(setTours)
+      .catch(() => setToursError("Can't connect to the server. Please check if XAMPP is running."))
+      .finally(() => setToursLoading(false));
+  };
+
+  useEffect(() => { loadTours(); }, []);
 
   const results = useMemo(() => {
     const activeWindow = DATE_WINDOWS.find((w) => w.label === dateWindow) ?? DATE_WINDOWS[0];
-    let list = TOURS.filter((t) => {
+    let list = tours.filter((t) => {
       if (search.trim() && !t.destination.toLowerCase().includes(search.trim().toLowerCase())) return false;
       if (t.pricePerPerson > filters.priceMax) return false;
       if (filters.ratingMin !== null && t.rating < filters.ratingMin) return false;
@@ -283,7 +292,9 @@ export default function ToursScreen({ initialSearch }: Props) {
   const cardWidth = columns === 1 ? '100%' : columns === 2 ? '48.5%' : '32%';
 
   const openBooking = (tour: Tour, departure?: DepartureOption, travelerCount?: number) => {
-    setBookingPrefill({ departure: departure ?? tour.departures[0], travelers: travelerCount ?? travelers });
+    const chosen = departure ?? tour.departures[0];
+    if (!chosen) return; // no upcoming departures to book
+    setBookingPrefill({ departure: chosen, travelers: travelerCount ?? travelers });
     setBookingTour(tour);
   };
 
@@ -381,7 +392,17 @@ export default function ToursScreen({ initialSearch }: Props) {
           )}
 
           <View style={{ flex: 1, minWidth: 0, width: '100%' }}>
-            {results.length === 0 ? (
+            {toursLoading ? (
+              <View style={ly.emptyWrap}>
+                <ActivityIndicator color={C.amber} />
+              </View>
+            ) : toursError ? (
+              <View style={ly.emptyWrap}>
+                <Text style={{ fontSize: 34 }}>⚠️</Text>
+                <Text style={ly.emptyTitle}>{toursError}</Text>
+                <TouchableOpacity onPress={loadTours}><Text style={[ly.emptyText, { color: C.amber, fontWeight: '800' }]}>Tap to retry</Text></TouchableOpacity>
+              </View>
+            ) : results.length === 0 ? (
               <View style={ly.emptyWrap}>
                 <Text style={{ fontSize: 34 }}>🧭</Text>
                 <Text style={ly.emptyTitle}>No tours match your filters</Text>
@@ -394,7 +415,7 @@ export default function ToursScreen({ initialSearch }: Props) {
                     key={t.id}
                     tour={t}
                     width={cardWidth}
-                    favorited={favorites.has(t.id)}
+                    favorited={favoriteIds.has(t.id)}
                     onToggleFavorite={() => toggleFavorite(t.id)}
                     onViewDetails={() => setDetailTour(t)}
                     onBookNow={() => openBooking(t)}

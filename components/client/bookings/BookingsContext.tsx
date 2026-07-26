@@ -1,12 +1,15 @@
 /**
  * BookingsContext.tsx
- * Shared "My Bookings" store for the client area. Lets the Tours booking
- * wizard add a confirmed booking and have it immediately show up on the
- * My Bookings tab — no backend yet, so this lives in memory for the
- * session (seeded with a few past requests for a realistic starting list).
+ * Shared "My Bookings" store for the client area — fetches the logged-in
+ * user's real bookings from the database, and exposes createBooking/
+ * cancelBooking which call the backend directly (booking_create /
+ * client_cancel_booking) so the Tours booking wizard and My Bookings tab
+ * both operate on the same server-backed list.
  */
 
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { CLIENT_BOOKINGS_LIST_API_URL, BOOKING_CREATE_API_URL, CLIENT_CANCEL_BOOKING_API_URL } from '@/constants/api';
+import { useAuth } from '@/components/auth/AuthContext';
 
 export type BookingStatus = 'Upcoming' | 'Ongoing' | 'Completed' | 'Cancelled';
 
@@ -14,7 +17,7 @@ export type Booking = {
   id:             string;
   destination:    string;
   location:       string;
-  emoji:          string;
+  imageUrl:       string | null;
   dateFrom:       string;
   dateTo:         string;
   travelers:      number;
@@ -26,50 +29,94 @@ export type Booking = {
   status:         BookingStatus;
 };
 
-const SEED_BOOKINGS: Booking[] = [
-  {
-    id: 'GV-2026-00021',
-    destination: 'Bali, Indonesia', location: 'Bali, Indonesia', emoji: '🌏',
-    dateFrom: '2026-08-05', dateTo: '2026-08-09', travelers: 1,
-    bookedOn: '2026-07-10',
-    totalAmount: 26499, balanceDue: 0, paymentMethod: 'GCash', paymentStatus: 'Pending',
-    status: 'Upcoming',
-  },
-  {
-    id: 'GV-2026-00020',
-    destination: 'Bali, Indonesia', location: 'Bali, Indonesia', emoji: '🌏',
-    dateFrom: '2026-07-10', dateTo: '2026-07-14', travelers: 1,
-    bookedOn: '2026-07-03',
-    totalAmount: 25999, balanceDue: 0, paymentMethod: 'GCash', paymentStatus: 'Pending',
-    status: 'Upcoming',
-  },
-  {
-    id: 'GV-2026-00019',
-    destination: 'Bali, Indonesia', location: 'Bali, Indonesia', emoji: '🌏',
-    dateFrom: '2026-07-10', dateTo: '2026-07-14', travelers: 4,
-    bookedOn: '2026-06-28',
-    totalAmount: 103996, balanceDue: 0, paymentMethod: 'GCash', paymentStatus: 'Pending',
-    status: 'Upcoming',
-  },
-];
+export type CreateBookingInput = {
+  tourId:        string;
+  departureId:   string;
+  travelers:     number;
+  paymentMethod?: 'GCash' | 'Maya' | 'Bank Transfer';
+};
+
+export type CreateBookingResult =
+  | { ok: true; reference: string; totalAmount: number }
+  | { ok: false; message: string };
 
 type BookingsContextValue = {
-  bookings:            Booking[];
-  addBooking:          (booking: Booking) => void;
-  updateBookingStatus: (id: string, status: BookingStatus) => void;
+  bookings:      Booking[];
+  loading:       boolean;
+  error:         string;
+  refresh:       () => void;
+  createBooking: (input: CreateBookingInput) => Promise<CreateBookingResult>;
+  cancelBooking: (reference: string) => Promise<boolean>;
 };
 
 const BookingsContext = createContext<BookingsContextValue | null>(null);
 
 export function BookingsProvider({ children }: { children: React.ReactNode }) {
-  const [bookings, setBookings] = useState<Booking[]>(SEED_BOOKINGS);
+  const { user } = useAuth();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const addBooking = (booking: Booking) => setBookings((prev) => [booking, ...prev]);
+  const refresh = useCallback(() => {
+    if (!user) { setBookings([]); setLoading(false); return; }
+    setLoading(true);
+    setError('');
+    fetch(`${CLIENT_BOOKINGS_LIST_API_URL}&userId=${user.id}`)
+      .then((res) => res.json())
+      .then((result) => {
+        if (result.status !== 'success') throw new Error(result.message || 'Failed to load bookings.');
+        setBookings(result.data);
+      })
+      .catch(() => setError("Can't connect to the server. Please check if XAMPP is running."))
+      .finally(() => setLoading(false));
+  }, [user]);
 
-  const updateBookingStatus = (id: string, status: BookingStatus) =>
-    setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status } : b)));
+  useEffect(() => { refresh(); }, [refresh]);
 
-  const value = useMemo(() => ({ bookings, addBooking, updateBookingStatus }), [bookings]);
+  const createBooking = async (input: CreateBookingInput): Promise<CreateBookingResult> => {
+    if (!user) return { ok: false, message: 'You must be logged in to book.' };
+    try {
+      const res = await fetch(BOOKING_CREATE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          tourId: input.tourId,
+          departureId: input.departureId,
+          travelers: input.travelers,
+          paymentMethod: input.paymentMethod ?? null,
+        }),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') return { ok: false, message: result.message || 'Booking failed.' };
+      refresh();
+      return { ok: true, reference: result.data.reference, totalAmount: result.data.totalAmount };
+    } catch {
+      return { ok: false, message: "Can't connect to the server. Please check if XAMPP is running." };
+    }
+  };
+
+  const cancelBooking = async (reference: string): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const res = await fetch(CLIENT_CANCEL_BOOKING_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, reference }),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') return false;
+      setBookings((prev) => prev.map((b) => (b.id === reference ? { ...b, status: 'Cancelled' } : b)));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const value = useMemo(
+    () => ({ bookings, loading, error, refresh, createBooking, cancelBooking }),
+    [bookings, loading, error, refresh, user],
+  );
 
   return <BookingsContext.Provider value={value}>{children}</BookingsContext.Provider>;
 }

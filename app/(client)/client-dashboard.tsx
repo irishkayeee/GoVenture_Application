@@ -23,12 +23,14 @@ import ToursScreen from '@/components/client/tours/ToursScreen';
 import PlanTripScreen from '@/components/client/plan/PlanTripScreen';
 import MyBookingsScreen from '@/components/client/bookings/MyBookingsScreen';
 import { BookingsProvider } from '@/components/client/bookings/BookingsContext';
+import { FavoritesProvider } from '@/components/client/tours/FavoritesContext';
 import DocumentsScreen from '@/components/client/documents/DocumentsScreen';
 import AccountScreen from '@/components/client/account/AccountScreen';
 import ClientTopNav from '@/components/client/ClientTopNav';
 import ClientSidebar, { SIDEBAR_W } from '@/components/client/ClientSidebar';
 import LogoutConfirmModal from '@/components/client/LogoutConfirmModal';
 import { BOTTOM_NAV_TABS, TAB_META, TabKey } from '@/components/client/navConfig';
+import { useAuth } from '@/components/auth/AuthContext';
 
 /* ── Color System (matches landing/admin) ── */
 const C = {
@@ -85,6 +87,7 @@ const BottomNav = ({ active, onSelect, insetBottom }: { active: TabKey; onSelect
 export default function ClientDashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user, logout } = useAuth();
   const [showWelcome, setShowWelcome] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -120,11 +123,13 @@ export default function ClientDashboard() {
 
   const confirmLogout = () => {
     setShowLogoutConfirm(false);
+    logout();
     router.replace('/login' as any);
   };
 
   return (
     <BookingsProvider>
+    <FavoritesProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top', 'left', 'right']}>
         <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
@@ -132,7 +137,7 @@ export default function ClientDashboard() {
 
         <View style={{ flex: 1 }}>
           {activeTab === 'dashboard' ? (
-            <ClientDashboardHome onNavigate={setActiveTab} />
+            <ClientDashboardHome name={user?.fullName} onNavigate={setActiveTab} />
           ) : activeTab === 'tours' ? (
             <ToursScreen />
           ) : activeTab === 'plan' ? (
@@ -144,7 +149,7 @@ export default function ClientDashboard() {
           ) : activeTab === 'messages' ? (
             <ClientMessagesScreen />
           ) : activeTab === 'account' ? (
-            <AccountScreen onLogout={handleLogout} />
+            <AccountScreen name={user?.fullName} email={user?.email} onLogout={handleLogout} />
           ) : (
             <PlaceholderTab tab={activeTab} />
           )}
@@ -201,6 +206,7 @@ export default function ClientDashboard() {
           onConfirm={confirmLogout}
         />
       </SafeAreaView>
+    </FavoritesProvider>
     </BookingsProvider>
   );
 }

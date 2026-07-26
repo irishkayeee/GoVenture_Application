@@ -5,14 +5,15 @@
  * there's a real profile-editing flow.
  */
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C } from '../theme';
 import ClientPageHero from '../ClientPageHero';
-import { STAT_CARDS } from '../dashboard/mockData';
 import { useBookings } from '../bookings/BookingsContext';
+import { useAuth } from '@/components/auth/AuthContext';
+import EditProfileModal from './EditProfileModal';
 
 const ChevronIcon = () => (
   <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
@@ -34,9 +35,14 @@ const MENU_ROWS = ['Edit Profile', 'Saved Addresses', 'Payment Methods', 'Notifi
 type Props = { name?: string; email?: string; onLogout: () => void };
 
 export default function AccountScreen({ name = 'Jared Abellera', email = 'jared.abellera@email.com', onLogout }: Props) {
+  const { user } = useAuth();
   const { bookings } = useBookings();
+  const [editVisible, setEditVisible] = useState(false);
   const totalBookings = bookings.length;
-  const placesVisited = STAT_CARDS.find((c) => c.key === 'places')?.value ?? '0';
+  const placesVisited = useMemo(
+    () => new Set(bookings.filter((b) => b.status === 'Completed').map((b) => b.destination)).size,
+    [bookings]
+  );
 
   return (
     <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -63,7 +69,12 @@ export default function AccountScreen({ name = 'Jared Abellera', email = 'jared.
 
       <View style={mn.card}>
         {MENU_ROWS.map((label, i) => (
-          <TouchableOpacity key={label} style={[mn.row, i === MENU_ROWS.length - 1 && mn.rowLast]} activeOpacity={0.75}>
+          <TouchableOpacity
+            key={label}
+            style={[mn.row, i === MENU_ROWS.length - 1 && mn.rowLast]}
+            activeOpacity={0.75}
+            onPress={() => { if (label === 'Edit Profile') setEditVisible(true); }}
+          >
             <Text style={mn.rowText}>{label}</Text>
             <ChevronIcon />
           </TouchableOpacity>
@@ -76,6 +87,8 @@ export default function AccountScreen({ name = 'Jared Abellera', email = 'jared.
       </TouchableOpacity>
 
       <Copyright />
+
+      <EditProfileModal visible={editVisible} userId={user?.id} onClose={() => setEditVisible(false)} />
     </ScrollView>
   );
 }

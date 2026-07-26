@@ -6,18 +6,23 @@
  * back navigation and the tour info opening as a bottom sheet.
  */
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Modal,
-  StyleSheet, Platform, KeyboardAvoidingView, useWindowDimensions,
+  StyleSheet, Platform, KeyboardAvoidingView, useWindowDimensions, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C } from '../theme';
 import ClientPageHero from '../ClientPageHero';
-import { CLIENT_CONVERSATIONS, TourConversation, ChatMessage } from './mockData';
+import { TourConversation, ChatMessage } from './mockData';
 import TourInfoPanel from './TourInfoPanel';
+import { useAuth } from '@/components/auth/AuthContext';
+import {
+  CLIENT_CONVERSATIONS_LIST_API_URL, CLIENT_SEND_MESSAGE_API_URL,
+  CLIENT_MARK_CONVERSATION_READ_API_URL, CLIENT_END_CONVERSATION_API_URL,
+} from '@/constants/api';
 
 const WIDE_BREAKPOINT = 900;
 
@@ -288,14 +293,35 @@ export default function ClientMessagesScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
 
-  const [conversations, setConversations] = useState<TourConversation[]>(CLIENT_CONVERSATIONS);
-  const [activeId, setActiveId] = useState<string | null>(CLIENT_CONVERSATIONS[0]?.id ?? null);
+  const [conversations, setConversations] = useState<TourConversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [infoVisible, setInfoVisible] = useState(false);
   const [endConfirmVisible, setEndConfirmVisible] = useState(false);
+
+  const loadConversations = useCallback(() => {
+    if (!user) return;
+    setLoading(true);
+    setError('');
+    fetch(`${CLIENT_CONVERSATIONS_LIST_API_URL}&userId=${user.id}`)
+      .then((res) => res.json())
+      .then((result) => {
+        if (result.status !== 'success') throw new Error(result.message || 'Failed to load messages.');
+        const data = result.data as TourConversation[];
+        setConversations(data);
+        setActiveId((prev) => prev ?? data[0]?.id ?? null);
+      })
+      .catch((e) => setError(e.message || 'Failed to load messages.'))
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  useEffect(() => { loadConversations(); }, [loadConversations]);
 
   const active = useMemo(() => conversations.find((c) => c.id === activeId) ?? null, [conversations, activeId]);
 
@@ -303,28 +329,74 @@ export default function ClientMessagesScreen() {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unread: false } : c)));
     setActiveId(id);
     setMobileView('chat');
+    if (user) {
+      fetch(CLIENT_MARK_CONVERSATION_READ_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, conversationId: id }),
+      }).catch(() => {});
+    }
   };
 
-  const handleSend = (text: string) => {
-    if (!active || active.ended) return;
-    const today = new Date();
-    const iso = today.toISOString().slice(0, 10);
-    const time = today.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== active.id) return c;
-        const msg: ChatMessage = { id: `m${c.messages.length + 1}-${Date.now()}`, sender: 'client', text, date: iso, time };
-        return { ...c, messages: [...c.messages, msg], lastMessage: text, timeAgo: 'Just now' };
-      })
-    );
+  const handleSend = async (text: string) => {
+    if (!active || active.ended || !user) return;
+    try {
+      const res = await fetch(CLIENT_SEND_MESSAGE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, conversationId: active.id, text }),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') return;
+      const msg: ChatMessage = result.data;
+      setConversations((prev) =>
+        prev.map((c) => (c.id !== active.id ? c : { ...c, messages: [...c.messages, msg], lastMessage: text, timeAgo: 'Just now' }))
+      );
+    } catch {
+      // best-effort — the message list will resync on next load if this failed silently
+    }
   };
 
-  const handleEndConversation = () => {
-    if (!active) return;
+  const handleEndConversation = async () => {
+    if (!active || !user) return;
     setConversations((prev) => prev.map((c) => (c.id === active.id ? { ...c, ended: true } : c)));
     setEndConfirmVisible(false);
     setInfoVisible(false);
+    try {
+      await fetch(CLIENT_END_CONVERSATION_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, conversationId: active.id }),
+      });
+    } catch {
+      // Local state already updated optimistically.
+    }
   };
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1 }}>
+        <ClientPageHero icon="✉️" title="Messages" subtitle="Communicate with our team about your inquiries." />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={C.amber} />
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={{ flex: 1 }}>
+        <ClientPageHero icon="✉️" title="Messages" subtitle="Communicate with our team about your inquiries." />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 }}>
+          <Text style={{ fontSize: 12, color: C.danger, textAlign: 'center' }}>{error}</Text>
+          <TouchableOpacity onPress={loadConversations}>
+            <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.amber }}>Tap to retry</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   if (conversations.length === 0) {
     return (

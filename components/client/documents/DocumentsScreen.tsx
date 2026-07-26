@@ -1,21 +1,24 @@
 /**
  * DocumentsScreen.tsx
  * Client Documents tab — pick a booking, see its required-document
- * checklist and overall progress, and simulate uploading each file (no
- * document backend yet, so uploads just toggle a "Submitted" state).
+ * checklist and overall progress, and upload each file (image picker →
+ * base64 → document_upload), backed by the real booking_documents table.
  */
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
-  StyleSheet, Platform, useWindowDimensions,
+  StyleSheet, useWindowDimensions, ActivityIndicator, Alert,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C } from '../theme';
 import ClientPageHero from '../ClientPageHero';
 import { useBookings } from '../bookings/BookingsContext';
-import { RequiredDocument, buildDocumentChecklist } from './mockData';
+import { useAuth } from '@/components/auth/AuthContext';
+import { RequiredDocument } from './mockData';
+import { CLIENT_DOCUMENTS_LIST_API_URL, DOCUMENT_UPLOAD_API_URL, DOCUMENT_REMOVE_API_URL } from '@/constants/api';
 
 const WIDE_BREAKPOINT = 900;
 
@@ -60,7 +63,7 @@ function ProgressRing({ percent }: { percent: number }) {
   );
 }
 
-function DocumentCard({ doc, onToggleUpload, width }: { doc: RequiredDocument; onToggleUpload: () => void; width: any }) {
+function DocumentCard({ doc, onToggleUpload, width, busy }: { doc: RequiredDocument; onToggleUpload: () => void; width: any; busy?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const submitted = doc.status !== 'Pending Upload';
 
@@ -93,9 +96,20 @@ function DocumentCard({ doc, onToggleUpload, width }: { doc: RequiredDocument; o
         <Text style={dc.fileText} numberOfLines={1}>
           {doc.fileName ? (submitted ? `✓ ${doc.fileName}` : doc.fileName) : 'No file uploaded yet'}
         </Text>
-        <TouchableOpacity style={[dc.uploadBtn, submitted && dc.uploadBtnDone]} activeOpacity={0.85} onPress={onToggleUpload}>
-          {submitted ? <CheckIcon /> : null}
-          <Text style={[dc.uploadBtnText, submitted && dc.uploadBtnTextDone]}>{submitted ? 'Uploaded' : '+ Upload'}</Text>
+        <TouchableOpacity
+          style={[dc.uploadBtn, submitted && dc.uploadBtnDone, busy && { opacity: 0.6 }]}
+          activeOpacity={0.85}
+          onPress={onToggleUpload}
+          disabled={busy}
+        >
+          {busy ? (
+            <ActivityIndicator size="small" color={submitted ? C.success : '#FFFFFF'} />
+          ) : (
+            <>
+              {submitted ? <CheckIcon /> : null}
+              <Text style={[dc.uploadBtnText, submitted && dc.uploadBtnTextDone]}>{submitted ? 'Uploaded' : '+ Upload'}</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -106,32 +120,107 @@ export default function DocumentsScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
   const { bookings } = useBookings();
+  const { user } = useAuth();
   const scrollRef = useRef<ScrollView>(null);
   const checklistY = useRef(0);
 
   const [selectedId, setSelectedId] = useState<string | null>(bookings[0]?.id ?? null);
   const [byBooking, setByBooking] = useState<Record<string, RequiredDocument[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [busyDocId, setBusyDocId] = useState<string | null>(null);
 
   const selectedBooking = bookings.find((b) => b.id === selectedId) ?? bookings[0] ?? null;
 
-  const documents = useMemo(() => {
-    if (!selectedBooking) return [];
-    return byBooking[selectedBooking.id] ?? buildDocumentChecklist();
-  }, [selectedBooking, byBooking]);
+  useEffect(() => {
+    if (!selectedBooking) { setLoading(false); return; }
+    setLoading(true);
+    setError('');
+    fetch(`${CLIENT_DOCUMENTS_LIST_API_URL}&userId=${user?.id}&bookingId=${selectedBooking.id}`)
+      .then((res) => res.json())
+      .then((result) => {
+        if (result.status !== 'success') throw new Error(result.message || 'Failed to load documents.');
+        setByBooking((prev) => ({ ...prev, [selectedBooking.id]: result.data }));
+      })
+      .catch((e) => setError(e.message || 'Failed to load documents.'))
+      .finally(() => setLoading(false));
+  }, [selectedBooking?.id, user?.id]);
+
+  const documents = selectedBooking ? byBooking[selectedBooking.id] ?? [] : [];
+
+  const handleUpload = async (docId: string) => {
+    if (!selectedBooking || !user) return;
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow photo library access to upload a document.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.6,
+      base64: true,
+    });
+    if (result.canceled || !result.assets?.[0]?.base64) return;
+    const asset = result.assets[0];
+    const mimeType = asset.mimeType ?? 'image/jpeg';
+
+    setBusyDocId(docId);
+    try {
+      const res = await fetch(DOCUMENT_UPLOAD_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          bookingId: selectedBooking.id,
+          docType: docId,
+          fileDataUri: `data:${mimeType};base64,${asset.base64}`,
+        }),
+      });
+      const uploadResult = await res.json();
+      if (uploadResult.status !== 'success') {
+        Alert.alert('Upload failed', uploadResult.message || 'Please try again.');
+        return;
+      }
+      setByBooking((prev) => ({
+        ...prev,
+        [selectedBooking.id]: (prev[selectedBooking.id] ?? []).map((d) =>
+          d.id === docId ? { ...d, status: uploadResult.data.status, fileName: uploadResult.data.fileName } : d
+        ),
+      }));
+    } catch {
+      Alert.alert('Upload failed', 'Please check your connection and try again.');
+    } finally {
+      setBusyDocId(null);
+    }
+  };
+
+  const handleRemove = async (docId: string) => {
+    if (!selectedBooking || !user) return;
+    setBusyDocId(docId);
+    try {
+      const res = await fetch(DOCUMENT_REMOVE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, bookingId: selectedBooking.id, docType: docId }),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') return;
+      setByBooking((prev) => ({
+        ...prev,
+        [selectedBooking.id]: (prev[selectedBooking.id] ?? []).map((d) =>
+          d.id === docId ? { ...d, status: 'Pending Upload', fileName: null } : d
+        ),
+      }));
+    } finally {
+      setBusyDocId(null);
+    }
+  };
 
   const toggleUpload = (docId: string) => {
-    if (!selectedBooking) return;
-    setByBooking((prev) => {
-      const current = prev[selectedBooking.id] ?? buildDocumentChecklist();
-      const next = current.map((d) =>
-        d.id === docId
-          ? d.status === 'Pending Upload'
-            ? { ...d, status: 'Submitted' as const, fileName: `${d.id}.jpg` }
-            : { ...d, status: 'Pending Upload' as const, fileName: null }
-          : d
-      );
-      return { ...prev, [selectedBooking.id]: next };
-    });
+    const doc = documents.find((d) => d.id === docId);
+    if (!doc) return;
+    if (doc.status === 'Pending Upload') handleUpload(docId);
+    else handleRemove(docId);
   };
 
   const required = documents.length;
@@ -173,6 +262,19 @@ export default function DocumentsScreen() {
         })}
       </View>
 
+      {loading ? (
+        <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+          <ActivityIndicator color={C.amber} />
+        </View>
+      ) : error ? (
+        <View style={{ paddingVertical: 40, alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 12, color: C.danger, textAlign: 'center', paddingHorizontal: 24 }}>{error}</Text>
+          <TouchableOpacity onPress={() => setSelectedId(selectedBooking.id)}>
+            <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.amber }}>Tap to retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+      <>
       <View style={pg.card}>
         <ProgressRing percent={percent} />
         <View style={{ flex: 1, minWidth: 160 }}>
@@ -208,9 +310,17 @@ export default function DocumentsScreen() {
 
       <View style={{ paddingHorizontal: 16, flexDirection: 'row', flexWrap: 'wrap', gap: '2%', rowGap: 14 }}>
         {documents.map((doc) => (
-          <DocumentCard key={doc.id} doc={doc} width={cardWidth} onToggleUpload={() => toggleUpload(doc.id)} />
+          <DocumentCard
+            key={doc.id}
+            doc={doc}
+            width={cardWidth}
+            busy={busyDocId === doc.id}
+            onToggleUpload={() => toggleUpload(doc.id)}
+          />
         ))}
       </View>
+      </>
+      )}
 
       <Copyright />
     </ScrollView>

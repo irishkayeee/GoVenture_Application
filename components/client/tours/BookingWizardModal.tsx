@@ -1,14 +1,15 @@
 /**
  * BookingWizardModal.tsx
  * 3-step booking flow: Customer Information → Payment Details → Confirmation.
- * No backend yet, so payment is simulated (a tap-to-attach "proof" and a
- * decorative QR code) and the booking ID/receipt are generated client-side.
+ * Payment proof/QR are still simulated (no payment gateway), but the booking
+ * itself is created server-side via BookingsContext.createBooking, which
+ * generates the real booking reference and persists it to the database.
  */
 
 import React, { useEffect, useState } from 'react';
 import {
   Modal, View, Text, TextInput, TouchableOpacity, ScrollView, Share,
-  StyleSheet, Platform, useWindowDimensions, KeyboardAvoidingView,
+  StyleSheet, Platform, useWindowDimensions, KeyboardAvoidingView, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
@@ -73,8 +74,6 @@ const formatDateTime = (iso: string) => {
   const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   return `${date} ${time}`;
 };
-const genBookingId = () => `GV-2026-${String(Math.floor(Math.random() * 90000) + 10000).padStart(5, '0')}`;
-
 type Step = 1 | 2 | 3;
 type PaymentMethod = 'GCash' | 'Maya' | 'Bank Transfer';
 
@@ -130,7 +129,7 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
   const insets = useSafeAreaInsets();
-  const { addBooking } = useBookings();
+  const { createBooking } = useBookings();
 
   const [step, setStep] = useState<Step>(1);
   const [firstName, setFirstName] = useState('');
@@ -149,8 +148,10 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
   const [refNumber, setRefNumber] = useState('');
   const [proofAttached, setProofAttached] = useState(false);
   const [paymentError, setPaymentError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const [bookingId, setBookingId] = useState('');
+  const [confirmedTotal, setConfirmedTotal] = useState(0);
 
   useEffect(() => {
     if (!visible || !tour) return;
@@ -158,18 +159,19 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
     setFirstName(''); setMiddleName(''); setLastName(''); setContact('');
     setGender('Female'); setNotes(''); setFormError('');
     setMethod('GCash'); setRefNumber(''); setProofAttached(false); setPaymentError('');
-    const idx = prefill ? tour.departures.findIndex((d) => d.startISO === prefill.departure.startISO) : 0;
+    const idx = prefill ? tour.departures.findIndex((d) => d.id === prefill.departure.id) : 0;
     setDepartureIdx(idx >= 0 ? idx : 0);
     setAdults(prefill?.travelers ?? 2);
     setChildren(0); setInfants(0);
-    setBookingId(genBookingId());
+    setBookingId('');
+    setConfirmedTotal(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, tour?.id]);
 
   if (!tour) return null;
 
   const departure = tour.departures[Math.min(departureIdx, tour.departures.length - 1)];
-  const total = tour.pricePerPerson * adults;
+  const total = (departure?.adultPrice ?? tour.pricePerPerson) * adults;
   const amountDue = total + SERVICE_FEE;
 
   const goNext = () => {
@@ -181,27 +183,30 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
     setStep(2);
   };
 
-  const confirmBooking = () => {
+  const confirmBooking = async () => {
     if (!refNumber.trim()) {
       setPaymentError('Please enter your payment reference number.');
       return;
     }
+    if (!departure) {
+      setPaymentError('No departure date selected.');
+      return;
+    }
     setPaymentError('');
-    addBooking({
-      id: bookingId,
-      destination: tour.destination,
-      location: tour.destination,
-      emoji: tour.emoji,
-      dateFrom: departure.startISO,
-      dateTo: departure.endISO,
+    setSubmitting(true);
+    const result = await createBooking({
+      tourId: tour.id,
+      departureId: departure.id,
       travelers: adults,
-      bookedOn: new Date().toISOString(),
-      totalAmount: amountDue,
-      balanceDue: 0,
       paymentMethod: method,
-      paymentStatus: 'Pending',
-      status: 'Upcoming',
     });
+    setSubmitting(false);
+    if (!result.ok) {
+      setPaymentError(result.message);
+      return;
+    }
+    setBookingId(result.reference);
+    setConfirmedTotal(result.totalAmount + SERVICE_FEE);
     setStep(3);
   };
 
@@ -212,8 +217,8 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
       `Destination: ${tour.destination}`,
       `Travel Dates: ${formatDateTime(departure.startISO)} – ${formatDateTime(departure.endISO)}`,
       `Payment Method: ${method}`,
-      `Total Amount: ${money(amountDue)}`,
-      `Amount Paid: ${money(amountDue)}`,
+      `Total Amount: ${money(confirmedTotal)}`,
+      `Amount Paid: ${money(confirmedTotal)}`,
       'Payment Status: Pending',
     ].join('\n');
     try {
@@ -395,12 +400,16 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
           {!!paymentError && <Text style={sm.errorText}>{paymentError}</Text>}
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
-            <TouchableOpacity style={fm.backBtn} activeOpacity={0.85} onPress={() => setStep(1)}>
+            <TouchableOpacity style={fm.backBtn} activeOpacity={0.85} onPress={() => setStep(1)} disabled={submitting}>
               <BackIcon />
               <Text style={fm.backBtnText}>Back</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={fm.confirmBtn} activeOpacity={0.85} onPress={confirmBooking}>
-              <Text style={fm.confirmBtnText}>Confirm Booking ✓</Text>
+            <TouchableOpacity style={[fm.confirmBtn, submitting && { opacity: 0.7 }]} activeOpacity={0.85} onPress={confirmBooking} disabled={submitting}>
+              {submitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={fm.confirmBtnText}>Confirm Booking ✓</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -439,8 +448,8 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
       </View>
 
       <View style={cf.totalsBox}>
-        <View style={cf.totalsRow}><Text style={cf.totalsLabel}>Total Amount</Text><Text style={cf.totalsValue}>{money(amountDue)}</Text></View>
-        <View style={cf.totalsRow}><Text style={cf.totalsLabel}>Amount Paid</Text><Text style={cf.totalsValue}>{money(amountDue)}</Text></View>
+        <View style={cf.totalsRow}><Text style={cf.totalsLabel}>Total Amount</Text><Text style={cf.totalsValue}>{money(confirmedTotal)}</Text></View>
+        <View style={cf.totalsRow}><Text style={cf.totalsLabel}>Amount Paid</Text><Text style={cf.totalsValue}>{money(confirmedTotal)}</Text></View>
         <View style={cf.totalsRow}><Text style={cf.totalsLabel}>Payment Status</Text><Text style={cf.pendingText}>Pending</Text></View>
       </View>
 

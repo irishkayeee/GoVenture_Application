@@ -90,7 +90,7 @@ export default function TourDetailModal({ tour, visible, onClose, onBook }: Prop
   if (!tour) return null;
 
   const departure = tour.departures[Math.min(departureIdx, tour.departures.length - 1)];
-  const total = tour.pricePerPerson * travelers;
+  const total = (departure?.adultPrice ?? tour.pricePerPerson) * travelers;
 
   const bookingBox = (
     <View style={bx.card}>
@@ -101,16 +101,20 @@ export default function TourDetailModal({ tour, visible, onClose, onBook }: Prop
       </View>
 
       <Text style={bx.fieldLabel}>Departure Date</Text>
-      <View style={bx.chipWrap}>
-        {tour.departures.map((d, i) => {
-          const active = i === departureIdx;
-          return (
-            <TouchableOpacity key={i} style={[bx.chip, active && bx.chipActive]} activeOpacity={0.8} onPress={() => setDepartureIdx(i)}>
-              <Text style={[bx.chipText, active && bx.chipTextActive]}>{formatShort(d.startISO)}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      {tour.departures.length === 0 ? (
+        <Text style={bx.trustSub}>No upcoming departures right now — check back soon.</Text>
+      ) : (
+        <View style={bx.chipWrap}>
+          {tour.departures.map((d, i) => {
+            const active = i === departureIdx;
+            return (
+              <TouchableOpacity key={d.id} style={[bx.chip, active && bx.chipActive]} activeOpacity={0.8} onPress={() => setDepartureIdx(i)}>
+                <Text style={[bx.chipText, active && bx.chipTextActive]}>{formatShort(d.startISO)}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
 
       <Text style={bx.fieldLabel}>Travelers (Adults)</Text>
       <View style={bx.stepperRow}>
@@ -126,7 +130,12 @@ export default function TourDetailModal({ tour, visible, onClose, onBook }: Prop
       <Text style={bx.fieldLabel}>Total Estimate</Text>
       <Text style={bx.total}>{money(total)}</Text>
 
-      <TouchableOpacity style={bx.bookBtn} activeOpacity={0.85} onPress={() => onBook(departure, travelers)}>
+      <TouchableOpacity
+        style={[bx.bookBtn, !departure && { opacity: 0.5 }]}
+        activeOpacity={0.85}
+        disabled={!departure}
+        onPress={() => departure && onBook(departure, travelers)}
+      >
         <Text style={bx.bookBtnText}>Book This Tour</Text>
       </TouchableOpacity>
 
