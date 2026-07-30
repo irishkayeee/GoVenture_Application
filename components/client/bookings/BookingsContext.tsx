@@ -8,7 +8,7 @@
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { CLIENT_BOOKINGS_LIST_API_URL, BOOKING_CREATE_API_URL, CLIENT_CANCEL_BOOKING_API_URL } from '@/constants/api';
+import { CLIENT_BOOKINGS_LIST_API_URL, BOOKING_CREATE_API_URL, CLIENT_CANCEL_BOOKING_API_URL, REVIEW_SUBMIT_API_URL } from '@/constants/api';
 import { useAuth } from '@/components/auth/AuthContext';
 
 export type BookingStatus = 'Upcoming' | 'Ongoing' | 'Completed' | 'Cancelled';
@@ -27,6 +27,7 @@ export type Booking = {
   paymentMethod:  string;
   paymentStatus:  'Pending' | 'Paid';
   status:         BookingStatus;
+  hasReview:      boolean;
 };
 
 export type CreateBookingInput = {
@@ -47,6 +48,7 @@ type BookingsContextValue = {
   refresh:       () => void;
   createBooking: (input: CreateBookingInput) => Promise<CreateBookingResult>;
   cancelBooking: (reference: string) => Promise<boolean>;
+  submitReview:  (reference: string, rating: number, reviewText: string) => Promise<{ ok: boolean; message?: string }>;
 };
 
 const BookingsContext = createContext<BookingsContextValue | null>(null);
@@ -113,8 +115,25 @@ export function BookingsProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const submitReview = async (reference: string, rating: number, reviewText: string): Promise<{ ok: boolean; message?: string }> => {
+    if (!user) return { ok: false, message: 'You must be logged in.' };
+    try {
+      const res = await fetch(REVIEW_SUBMIT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, bookingId: reference, rating, reviewText }),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') return { ok: false, message: result.message || 'Failed to submit review.' };
+      setBookings((prev) => prev.map((b) => (b.id === reference ? { ...b, hasReview: true } : b)));
+      return { ok: true };
+    } catch {
+      return { ok: false, message: "Can't connect to the server. Please check if XAMPP is running." };
+    }
+  };
+
   const value = useMemo(
-    () => ({ bookings, loading, error, refresh, createBooking, cancelBooking }),
+    () => ({ bookings, loading, error, refresh, createBooking, cancelBooking, submitReview }),
     [bookings, loading, error, refresh, user],
   );
 

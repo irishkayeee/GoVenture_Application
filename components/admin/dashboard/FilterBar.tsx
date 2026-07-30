@@ -13,9 +13,10 @@ import { C as LIGHT_C } from './theme';
 import { useAppTheme, ColorPalette } from '../ThemeContext';
 import {
   DashboardFilters, DEFAULT_FILTERS,
-  DATE_RANGE_OPTIONS, TOUR_OPTIONS, DESTINATION_OPTIONS,
+  DATE_RANGE_OPTIONS,
   BOOKING_STATUS_OPTIONS, PAYMENT_STATUS_OPTIONS,
 } from './mockData';
+import { TOURS_LIST_API_URL } from '@/constants/api';
 
 const ResetIcon = () => (
   <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
@@ -156,20 +157,44 @@ const FilterField = ({
   </View>
 );
 
+type TourOption = { id: number; label: string; destination: string };
+
 export default function FilterBar({ filters, onChange }: FilterBarProps) {
   const { C } = useAppTheme();
   const fb = useMemo(() => makeFilterBarStyles(C), [C]);
   const [openField, setOpenField] = useState<FieldKey | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState<DashboardFilters>(filters);
+  const [tourOptions, setTourOptions] = useState<TourOption[]>([]);
 
   useEffect(() => {
     if (!expanded) setDraft(filters);
   }, [filters, expanded]);
 
+  useEffect(() => {
+    fetch(TOURS_LIST_API_URL)
+      .then((res) => res.json())
+      .then((result) => {
+        if (result.status !== 'success') return;
+        setTourOptions(
+          (result.data as any[]).map((t) => ({
+            id: Number(t.id),
+            label: t.tagline ? `${t.destination} — ${t.tagline}` : t.destination,
+            destination: t.destination,
+          }))
+        );
+      })
+      .catch(() => {});
+  }, []);
+
+  const destinationOptions = useMemo(
+    () => Array.from(new Set(tourOptions.map((t) => t.destination))).sort(),
+    [tourOptions]
+  );
+
   const dateRangeLabel = DATE_RANGE_OPTIONS.find((o) => o.value === draft.dateRange)?.label ?? 'This Month';
   const destinationLabel = draft.destination || 'All Destinations';
-  const tourLabel = TOUR_OPTIONS.find((t) => t.id === draft.tourId)?.label ?? 'All Tours';
+  const tourLabel = tourOptions.find((t) => t.id === draft.tourId)?.label ?? 'All Tours';
   const bookingStatusLabel = draft.bookingStatus || 'All Status';
   const paymentStatusLabel = draft.paymentStatus || 'All Payment Status';
 
@@ -236,7 +261,7 @@ export default function FilterBar({ filters, onChange }: FilterBarProps) {
       <PickerModal
         visible={openField === 'destination'}
         title="Destination"
-        options={[{ value: '', label: 'All Destinations' }, ...DESTINATION_OPTIONS.map((d) => ({ value: d, label: d }))]}
+        options={[{ value: '', label: 'All Destinations' }, ...destinationOptions.map((d) => ({ value: d, label: d }))]}
         selected={draft.destination}
         onSelect={(value) => setDraft({ ...draft, destination: value })}
         onClose={() => setOpenField(null)}
@@ -244,7 +269,7 @@ export default function FilterBar({ filters, onChange }: FilterBarProps) {
       <PickerModal
         visible={openField === 'tour'}
         title="Tour Package"
-        options={[{ value: '0', label: 'All Tours' }, ...TOUR_OPTIONS.map((t) => ({ value: String(t.id), label: t.label }))]}
+        options={[{ value: '0', label: 'All Tours' }, ...tourOptions.map((t) => ({ value: String(t.id), label: t.label }))]}
         selected={String(draft.tourId)}
         onSelect={(value) => setDraft({ ...draft, tourId: Number(value) })}
         onClose={() => setOpenField(null)}

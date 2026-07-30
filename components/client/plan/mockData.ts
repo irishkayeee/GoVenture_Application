@@ -39,17 +39,22 @@ export const INTEREST_OPTIONS: { label: string; emoji: string }[] = [
   { label: 'Shopping',      emoji: '🛍️' },
 ];
 
+export type TripRequestStatus = 'Pending' | 'Reviewing' | 'Quoted' | 'Confirmed' | 'Declined';
+
 export type PersonalizedTrip = {
   id:              string;
   destination:     string;
   dateFrom:        string;
   dateTo:          string;
   travelers:       number;
+  status:          TripRequestStatus;
   budgetRange:     string;
   tripPace:        TripPace;
   accommodation:   AccommodationTier;
   interests:       string[];
   specialRequests: string;
+  adminNote:       string | null;
+  quotedAmount:    number | null;
   createdAt:       string;
 };
 

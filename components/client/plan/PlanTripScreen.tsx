@@ -104,12 +104,44 @@ function TripCard({ trip, onRemove }: { trip: PersonalizedTrip; onRemove: () => 
       {trip.interests.length > 0 && (
         <Text style={tc.interests} numberOfLines={1}>Interests: {trip.interests.join(', ')}</Text>
       )}
-      <View style={tc.statusBox}>
-        <Text style={tc.statusText}>✓ Request submitted — our team will get back to you with a personalized itinerary.</Text>
+      <View style={[tc.statusBox, STATUS_BOX_STYLE[trip.status]]}>
+        <Text style={[tc.statusText, STATUS_TEXT_STYLE[trip.status]]}>{STATUS_MESSAGE[trip.status]}</Text>
+        {trip.quotedAmount !== null && (
+          <Text style={[tc.statusText, STATUS_TEXT_STYLE[trip.status], { marginTop: 4, fontWeight: '800' }]}>
+            Quoted amount: {money(trip.quotedAmount)}
+          </Text>
+        )}
+        {!!trip.adminNote && (
+          <Text style={[tc.statusText, STATUS_TEXT_STYLE[trip.status], { marginTop: 4, fontStyle: 'italic' }]}>
+            "{trip.adminNote}"
+          </Text>
+        )}
       </View>
     </View>
   );
 }
+
+const STATUS_MESSAGE: Record<PersonalizedTrip['status'], string> = {
+  Pending:   '✓ Request submitted — our team will get back to you with a personalized itinerary.',
+  Reviewing: '🔎 Our team is reviewing your request.',
+  Quoted:    '💬 We sent you a quote — check the details below.',
+  Confirmed: '🎉 Your trip is confirmed!',
+  Declined:  'This request could not be accommodated.',
+};
+const STATUS_BOX_STYLE: Record<PersonalizedTrip['status'], object> = {
+  Pending:   { backgroundColor: '#EFF8F0' },
+  Reviewing: { backgroundColor: '#FFF5E0' },
+  Quoted:    { backgroundColor: '#E8F1FC' },
+  Confirmed: { backgroundColor: '#EFF8F0' },
+  Declined:  { backgroundColor: '#FCE4E1' },
+};
+const STATUS_TEXT_STYLE: Record<PersonalizedTrip['status'], object> = {
+  Pending:   { color: C.success },
+  Reviewing: { color: '#B8922E' },
+  Quoted:    { color: '#2563EB' },
+  Confirmed: { color: C.success },
+  Declined:  { color: C.danger },
+};
 
 export default function PlanTripScreen() {
   const { width } = useWindowDimensions();

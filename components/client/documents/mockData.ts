@@ -5,7 +5,7 @@
  * now come from the backend (client_documents_list) — no seed data here.
  */
 
-export type DocumentStatus = 'Pending Upload' | 'Submitted' | 'Approved';
+export type DocumentStatus = 'Pending Upload' | 'Submitted' | 'Approved' | 'Rejected' | 'Reupload Requested';
 
 export type RequiredDocument = {
   id:           string;
@@ -14,4 +14,5 @@ export type RequiredDocument = {
   instructions: string;
   status:       DocumentStatus;
   fileName:     string | null;
+  adminComment: string | null;
 };

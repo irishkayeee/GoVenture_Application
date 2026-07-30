@@ -2,7 +2,7 @@
  * client-dashboard.tsx
  */
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -26,11 +26,13 @@ import { BookingsProvider } from '@/components/client/bookings/BookingsContext';
 import { FavoritesProvider } from '@/components/client/tours/FavoritesContext';
 import DocumentsScreen from '@/components/client/documents/DocumentsScreen';
 import AccountScreen from '@/components/client/account/AccountScreen';
+import ClientNotificationsScreen from '@/components/client/notifications/NotificationsScreen';
 import ClientTopNav from '@/components/client/ClientTopNav';
 import ClientSidebar, { SIDEBAR_W } from '@/components/client/ClientSidebar';
 import LogoutConfirmModal from '@/components/client/LogoutConfirmModal';
 import { BOTTOM_NAV_TABS, TAB_META, TabKey } from '@/components/client/navConfig';
 import { useAuth } from '@/components/auth/AuthContext';
+import { NOTIFICATIONS_UNREAD_COUNT_API_URL } from '@/constants/api';
 
 /* ── Color System (matches landing/admin) ── */
 const C = {
@@ -92,6 +94,20 @@ export default function ClientDashboard() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchUnread = () => {
+      fetch(`${NOTIFICATIONS_UNREAD_COUNT_API_URL}&recipientType=client&recipientId=${user.id}`)
+        .then((res) => res.json())
+        .then((result) => { if (result.status === 'success') setUnreadNotifications(result.data.unreadCount); })
+        .catch(() => {});
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [user, activeTab]);
 
   const slideAnim = useRef(new Animated.Value(-SIDEBAR_W)).current;
   const overlayAnim = useRef(new Animated.Value(0)).current;
@@ -148,6 +164,8 @@ export default function ClientDashboard() {
             <DocumentsScreen />
           ) : activeTab === 'messages' ? (
             <ClientMessagesScreen />
+          ) : activeTab === 'notifications' ? (
+            <ClientNotificationsScreen onNavigate={setActiveTab} />
           ) : activeTab === 'account' ? (
             <AccountScreen name={user?.fullName} email={user?.email} onLogout={handleLogout} />
           ) : (
@@ -187,6 +205,7 @@ export default function ClientDashboard() {
                 onClose={closeSidebar}
                 onLogout={handleLogout}
                 insetBottom={insets.bottom}
+                notificationsBadge={unreadNotifications}
               />
             </Animated.View>
           </>

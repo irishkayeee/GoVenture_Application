@@ -38,9 +38,10 @@ type Props = {
   onClose:     () => void;
   onLogout:    () => void;
   insetBottom: number;
+  notificationsBadge?: number;
 };
 
-export default function ClientSidebar({ active, onSelect, onClose, onLogout, insetBottom }: Props) {
+export default function ClientSidebar({ active, onSelect, onClose, onLogout, insetBottom, notificationsBadge = 0 }: Props) {
   return (
     <View style={[sb.wrapper, { paddingBottom: 16 + insetBottom }]}>
       <TouchableOpacity style={sb.closeBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -67,6 +68,11 @@ export default function ClientSidebar({ active, onSelect, onClose, onLogout, ins
               <Text style={[sb.navLabel, isActive ? sb.navLabelActive : sb.navLabelInactive]}>
                 {item.label}
               </Text>
+              {item.key === 'notifications' && notificationsBadge > 0 && (
+                <View style={sb.badge}>
+                  <Text style={sb.badgeText}>{notificationsBadge}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -113,6 +119,8 @@ const sb = StyleSheet.create({
   navLabel: { flex: 1, fontSize: 12.5, fontWeight: '700' },
   navLabelActive: { color: '#FFFFFF' },
   navLabelInactive: { color: C.brown },
+  badge: { backgroundColor: C.amber, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, minWidth: 20, alignItems: 'center' },
+  badgeText: { fontSize: 9, fontWeight: '800', color: '#FFFFFF' },
 
   logoutItem: { backgroundColor: '#FCE4E1', marginTop: 14 },
   logoutLabel: { flex: 1, fontSize: 12.5, fontWeight: '700', color: '#E5473A' },

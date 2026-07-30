@@ -19,6 +19,9 @@ import {
 } from 'react-native';
 import { useFonts, DancingScript_700Bold } from '@expo-google-fonts/dancing-script';
 import { C, CloseIcon, EmailIcon, LockIcon, EyeIcon } from './Authshared';
+import {
+  FORGOT_PASSWORD_REQUEST_API_URL, FORGOT_PASSWORD_VERIFY_API_URL, FORGOT_PASSWORD_RESET_API_URL,
+} from '@/constants/api';
 
 /* ── Step Indicator ── */
 const StepIndicator = ({ current }: { current: number }) => (
@@ -162,28 +165,78 @@ export default function ForgotPasswordModal({ visible, onClose }: ForgotPassword
 
   const handleClose = () => { reset(); onClose(); };
 
-  const fakeAsync = (cb: () => void) => {
-    setLoading(true);
-    setTimeout(() => { setLoading(false); cb(); }, 1200);
-  };
-
-  const handleSendOTP = () => {
+  const handleSendOTP = async () => {
     if (!email.includes('@')) { setError('Please enter a valid email address.'); return; }
     setError('');
-    fakeAsync(() => setStep(2));
+    setLoading(true);
+    try {
+      const res = await fetch(FORGOT_PASSWORD_REQUEST_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') { setError(result.message || 'Failed to send reset code.'); return; }
+      setStep(2);
+    } catch {
+      setError("Can't connect to the server. Please check your connection.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleVerifyOTP = () => {
+  const handleVerifyOTP = async () => {
     if (otp.length < 6) { setError('Please enter the 6-digit code.'); return; }
     setError('');
-    fakeAsync(() => setStep(3));
+    setLoading(true);
+    try {
+      const res = await fetch(FORGOT_PASSWORD_VERIFY_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), code: otp }),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') { setError(result.message || 'Invalid or expired code.'); return; }
+      setStep(3);
+    } catch {
+      setError("Can't connect to the server. Please check your connection.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleResetPassword = () => {
-    if (newPass.length < 6) { setError('Password must be at least 6 characters.'); return; }
+  const handleResetPassword = async () => {
+    if (newPass.length < 8) { setError('Password must be at least 8 characters.'); return; }
     if (newPass !== confirmPass) { setError('Passwords do not match.'); return; }
     setError('');
-    fakeAsync(() => handleClose());
+    setLoading(true);
+    try {
+      const res = await fetch(FORGOT_PASSWORD_RESET_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), code: otp, newPassword: newPass }),
+      });
+      const result = await res.json();
+      if (result.status !== 'success') { setError(result.message || 'Failed to reset password.'); return; }
+      handleClose();
+    } catch {
+      setError("Can't connect to the server. Please check your connection.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setLoading(true);
+    try {
+      await fetch(FORGOT_PASSWORD_REQUEST_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const stepTitles: Record<1 | 2 | 3, { script: string; sub: string }> = {
@@ -254,7 +307,7 @@ export default function ForgotPasswordModal({ visible, onClose }: ForgotPassword
                     <Text style={m.otpHint}>Enter the 6-digit code</Text>
                     <OTPInput value={otp} onChange={setOtp} />
                     <PrimaryBtn label="VERIFY CODE →" onPress={handleVerifyOTP} loading={loading} />
-                    <TouchableOpacity style={m.resendRow} onPress={() => fakeAsync(() => {})}>
+                    <TouchableOpacity style={m.resendRow} onPress={handleResendCode}>
                       <Text style={m.resendText}>Didn't receive it? </Text>
                       <Text style={m.resendLink}>Resend code</Text>
                     </TouchableOpacity>
@@ -266,7 +319,7 @@ export default function ForgotPasswordModal({ visible, onClose }: ForgotPassword
                   <View>
                     <Field
                       label="NEW PASSWORD"
-                      placeholder="Min. 6 characters"
+                      placeholder="Min. 8 characters"
                       value={newPass}
                       onChangeText={setNewPass}
                       icon={<LockIcon />}

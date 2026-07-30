@@ -69,6 +69,7 @@ type TourFormState = {
   shortDescription:   string;
   tourCode:           string;
   tourType:           TourType;
+  commissionRate:     string;
   additionalCharges:  AdditionalCharge[];
   dateBatches:        DateBatch[];
   itineraryDays:      ItineraryDay[];
@@ -98,6 +99,7 @@ function createInitialForm(): TourFormState {
     coverImageUri: null, coverImageBase64: null, coverImageMimeType: null,
     destination: '', airline: '', cruiseLine: '', tourName: '', duration: '', durationDays: '', durationNights: '', status: 'Active',
     shortDescription: '', tourCode: generateTourCode(), tourType: TOUR_TYPE_OPTIONS[0].value,
+    commissionRate: '15',
     additionalCharges: [], dateBatches: [],
     itineraryDays: [day1], activeDayId: day1.id,
     inclusions: [], exclusions: [],
@@ -745,6 +747,19 @@ const Step2PricingAvailability = ({ form, update }: StepProps) => {
         </TouchableOpacity>
       </View>
 
+      <View style={aw.card}>
+        <Text style={aw.cardTitle}>Agency Commission</Text>
+        <Text style={aw.cardSub}>Percentage of each confirmed booking's total that counts as the agency's commission — feeds the Dashboard's commission reports.</Text>
+        <View style={aw.priceInputWrapSmall}>
+          <TextInput
+            style={aw.priceInputSmall} keyboardType="numeric" placeholder="15"
+            placeholderTextColor={C.brownMid + '80'} value={form.commissionRate}
+            onChangeText={(t) => update({ commissionRate: t.replace(/[^0-9.]/g, '') })}
+          />
+          <Text style={aw.pesoSign}>%</Text>
+        </View>
+      </View>
+
       <AddDateRangeModal
         key={modalMode.editingId ?? `add-${resetCounter}`}
         visible={modalMode.open}
@@ -1339,6 +1354,7 @@ export default function AddTourPackageModal({ visible, onClose, onCreated }: Pro
           tourCode: form.tourCode,
           duration: form.duration,
           tourType: form.tourType,
+          commissionRate: form.commissionRate,
           airline: form.airline,
           cruiseLine: form.cruiseLine,
           status: statusOverride ?? form.status,

@@ -21,7 +21,9 @@ import {
 import {
   PAYMENTS_LIST_API_URL, PAYMENT_MARK_PAID_API_URL,
   QR_METHODS_LIST_API_URL, QR_METHOD_CREATE_API_URL,
+  EXPORT_PAYMENTS_CSV_API_URL,
 } from '@/constants/api';
+import { downloadAndShareCsv } from '../exportCsv';
 import AddPaymentMethodModal from './AddPaymentMethodModal';
 import PaymentDetailModal from './PaymentDetailModal';
 
@@ -178,6 +180,18 @@ export default function PaymentsScreen() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [query, setQuery] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await downloadAndShareCsv(EXPORT_PAYMENTS_CSV_API_URL, `payments_report_${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch {
+      // Sharing cancelled or unavailable — nothing to do.
+    } finally {
+      setExporting(false);
+    }
+  };
   const [statusFilter, setStatusFilter] = useState<PaymentStatus | ''>('');
   const [methodFilter, setMethodFilter] = useState<PaymentMethod | ''>('');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
@@ -282,8 +296,8 @@ export default function PaymentsScreen() {
             <FunnelIcon />
             <Text style={ps.filterBtnText}>Filter</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={ps.exportBtn} activeOpacity={0.85}>
-            <DownloadIcon />
+          <TouchableOpacity style={ps.exportBtn} activeOpacity={0.85} onPress={handleExport} disabled={exporting}>
+            {exporting ? <ActivityIndicator color="#FFFFFF" size="small" /> : <DownloadIcon />}
             <Text style={ps.exportBtnText}>Export</Text>
           </TouchableOpacity>
         </View>

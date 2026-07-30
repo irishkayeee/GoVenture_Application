@@ -128,6 +128,53 @@ export function MiniBarChart({ values, labels, color, width, height = 190 }: Ser
   );
 }
 
+type DualSeriesChartProps = {
+  valuesA: number[];
+  valuesB: number[];
+  labels:  string[];
+  colorA:  string;
+  colorB:  string;
+  width:   number;
+  height?: number;
+};
+
+export function MiniDualBarChart({ valuesA, valuesB, labels, colorA, colorB, width, height = 190 }: DualSeriesChartProps) {
+  const { C } = useAppTheme();
+  const chartW = width - PAD.left - PAD.right;
+  const chartH = height - PAD.top - PAD.bottom;
+  const max = Math.max(1, ...valuesA, ...valuesB);
+  const gap = 4;
+  const barGroupGap = 8;
+  const n = Math.max(valuesA.length, valuesB.length);
+  const groupW = n > 0 ? (chartW - barGroupGap * (n - 1)) / n : 0;
+  const barW = Math.max(1, (groupW - gap) / 2);
+  const labelStep = Math.max(1, Math.ceil(labels.length / 6));
+
+  return (
+    <Svg width={width} height={height}>
+      {valuesA.map((v, i) => {
+        const barH = Math.max(1, (v / max) * chartH);
+        const x = PAD.left + i * (groupW + barGroupGap);
+        const y = PAD.top + chartH - barH;
+        return <Path key={`a${i}`} d={rectPath(x, y, barW, barH)} fill={colorA} />;
+      })}
+      {valuesB.map((v, i) => {
+        const barH = Math.max(1, (v / max) * chartH);
+        const x = PAD.left + i * (groupW + barGroupGap) + barW + gap;
+        const y = PAD.top + chartH - barH;
+        return <Path key={`b${i}`} d={rectPath(x, y, barW, barH)} fill={colorB} />;
+      })}
+      {labels.map((l, i) => (
+        i % labelStep === 0 ? (
+          <SvgText key={i} x={PAD.left + i * (groupW + barGroupGap) + groupW / 2} y={height - 5} fontSize={9} fill={C.brownMid} opacity={0.65} textAnchor="middle">
+            {l}
+          </SvgText>
+        ) : null
+      ))}
+    </Svg>
+  );
+}
+
 type DonutChartProps = {
   slices:      { value: number; color: string }[];
   size?:       number;

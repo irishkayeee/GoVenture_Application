@@ -17,6 +17,7 @@ import { StatCard, FavoriteTour, RecommendedTour } from './mockData';
 import { useBookings, Booking } from '../bookings/BookingsContext';
 import { fetchTours, Tour } from '../tours/mockData';
 import { useFavorites } from '../tours/FavoritesContext';
+import { TRIP_WEATHER_API_URL } from '@/constants/api';
 
 const money = (n: number) => `₱${n.toLocaleString('en-US')}`;
 
@@ -246,6 +247,52 @@ function CountdownBox({ value, label }: { value: number; label: string }) {
   );
 }
 
+type TripWeather = {
+  available: boolean;
+  location?: string;
+  current?: { temp: number; label: string; icon: string };
+};
+
+const WEATHER_ICON_PATHS: Record<string, string> = {
+  sun: 'M12 7.5a4.5 4.5 0 100 9 4.5 4.5 0 000-9zM12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8L6 18M18 6l1.8-1.8',
+  'partly-cloudy': 'M9 8.5a3.5 3.5 0 016.9-.9M6.5 20h11a3.5 3.5 0 00.6-6.95A5 5 0 008.7 11.2 3.5 3.5 0 006.5 20z',
+  cloudy: 'M6.5 19h11a3.5 3.5 0 00.6-6.95A5 5 0 008.7 10.2 3.5 3.5 0 006.5 19z',
+  fog: 'M6.5 15h11a3.5 3.5 0 00.6-6.95A5 5 0 008.7 6.2 3.5 3.5 0 006.5 15zM4 18h16M6 21h12',
+  rain: 'M6.5 13h11a3.5 3.5 0 00.6-6.95A5 5 0 008.7 4.2 3.5 3.5 0 006.5 13zM8 17l-1 3M12 17l-1 3M16 17l-1 3',
+  snow: 'M6.5 13h11a3.5 3.5 0 00.6-6.95A5 5 0 008.7 4.2 3.5 3.5 0 006.5 13zM8 18v3M12 18v3M16 18v3',
+  storm: 'M6.5 12h11a3.5 3.5 0 00.6-6.95A5 5 0 008.7 3.2 3.5 3.5 0 006.5 12zM13 14l-3 5h3l-2 4',
+};
+
+const WeatherIcon = ({ icon, color = C.amber, size = 14 }: { icon: string; color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d={WEATHER_ICON_PATHS[icon] ?? WEATHER_ICON_PATHS.cloudy} stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+function TripWeatherChip({ destination, dateFrom }: { destination: string; dateFrom: string }) {
+  const [weather, setWeather] = useState<TripWeather | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const dateOnly = dateFrom.slice(0, 10);
+    fetch(`${TRIP_WEATHER_API_URL}&destination=${encodeURIComponent(destination)}&date=${dateOnly}`)
+      .then((res) => res.json())
+      .then((result) => { if (!cancelled && result.status === 'success') setWeather(result.data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [destination, dateFrom]);
+
+  if (!weather?.available || !weather.current) return null;
+
+  return (
+    <View style={ut.weatherChip}>
+      <WeatherIcon icon={weather.current.icon} />
+      <Text style={ut.weatherTemp}>{weather.current.temp}°C</Text>
+      <Text style={ut.weatherLabel}>{weather.current.label}</Text>
+    </View>
+  );
+}
+
 function UpcomingTripCard({ trip, onViewAll }: { trip: Booking; onViewAll: () => void }) {
   const { days, hours, mins, secs } = useCountdown(trip.dateFrom);
   return (
@@ -259,7 +306,10 @@ function UpcomingTripCard({ trip, onViewAll }: { trip: Booking; onViewAll: () =>
           )}
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={ut.dest} numberOfLines={1}>{trip.destination}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={ut.dest} numberOfLines={1}>{trip.destination}</Text>
+            <TripWeatherChip destination={trip.destination} dateFrom={trip.dateFrom} />
+          </View>
           <Text style={ut.venue} numberOfLines={1}>{trip.location}</Text>
           <Text style={ut.dates}>{formatShort(trip.dateFrom)} – {formatShort(trip.dateTo)}</Text>
           <Text style={ut.travelers}>{trip.travelers} Travelers</Text>
@@ -542,7 +592,13 @@ const ut = StyleSheet.create({
     width: 52, height: 52, borderRadius: 12, flexShrink: 0, overflow: 'hidden',
     backgroundColor: C.amber, alignItems: 'center', justifyContent: 'center',
   },
-  dest: { fontSize: 13, fontWeight: '900', color: C.brown },
+  dest: { fontSize: 13, fontWeight: '900', color: C.brown, flexShrink: 1 },
+  weatherChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: '#FFF3E8', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, flexShrink: 0,
+  },
+  weatherTemp: { fontSize: 10.5, fontWeight: '900', color: C.amber },
+  weatherLabel: { fontSize: 9, color: C.brownMid, opacity: 0.8 },
   venue: { fontSize: 10.5, color: C.amber, fontWeight: '700', marginTop: 1 },
   dates: { fontSize: 10, color: C.brownMid, marginTop: 3 },
   travelers: { fontSize: 10, color: C.brownMid, opacity: 0.75, marginTop: 1 },

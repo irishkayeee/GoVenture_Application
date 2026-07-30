@@ -2,7 +2,7 @@
  * admin-dashboard.tsx
  */
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -28,7 +28,13 @@ import MessagesScreen from '@/components/admin/messages/MessagesScreen';
 import TourPackagesScreen from '@/components/admin/tours/TourPackagesScreen';
 import PaymentsScreen from '@/components/admin/payments/PaymentsScreen';
 import AccountsScreen from '@/components/admin/accounts/AccountsScreen';
+import AdminDocumentsScreen from '@/components/admin/documents/DocumentsScreen';
+import TripRequestsScreen from '@/components/admin/trips/TripRequestsScreen';
+import NotificationsScreen from '@/components/admin/notifications/NotificationsScreen';
+import AdminSettingsScreen from '@/components/admin/settings/SettingsScreen';
 import { ThemeProvider, useAppTheme, ColorPalette } from '@/components/admin/ThemeContext';
+import { useAuth } from '@/components/auth/AuthContext';
+import { NOTIFICATIONS_UNREAD_COUNT_API_URL } from '@/constants/api';
 
 /* ── Color System (matches index.tsx) ── */
 const C = {
@@ -99,6 +105,19 @@ const PaymentsIcon = ({ color = C.white }: IconColorProp) => (
   </Svg>
 );
 
+const PlaneIcon = ({ color = C.white }: IconColorProp) => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+    <Path d="M21 3L3 10.5l7 2.5 2.5 7L21 3z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round"/>
+  </Svg>
+);
+
+const DocumentsIcon = ({ color = C.white }: IconColorProp) => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+    <Path d="M7 3h7l4 4v14a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke={color} strokeWidth={1.8} strokeLinejoin="round"/>
+    <Path d="M14 3v4h4" stroke={color} strokeWidth={1.8} strokeLinejoin="round"/>
+  </Svg>
+);
+
 const AccountsIcon = ({ color = C.white }: IconColorProp) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
     <Path d="M16 8a4 4 0 11-8 0 4 4 0 018 0z" stroke={color} strokeWidth={1.8}/>
@@ -157,6 +176,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'tours',         label: 'Tours',            Icon: ToursIcon },
   { key: 'calendar',      label: 'Calendar',         Icon: CalendarIcon },
   { key: 'payments',      label: 'Payments',         Icon: PaymentsIcon },
+  { key: 'documents',     label: 'Documents',        Icon: DocumentsIcon },
+  { key: 'tripRequests',  label: 'Trip Requests',    Icon: PlaneIcon },
 ];
 
 const ACCOUNT_ITEMS: NavItem[] = [
@@ -305,7 +326,7 @@ const makeSidebarStyles = (C: ColorPalette, isDark: boolean) => StyleSheet.creat
 ════════════════════════════════════════ */
 const TAB_LABELS: Record<string, string> = {
   bookings: 'Bookings', messages: 'Messages', accounts: 'Account', notifications: 'Notifications',
-  tours: 'Tours', calendar: 'Calendar', payments: 'Payments',
+  tours: 'Tours', calendar: 'Calendar', payments: 'Payments', documents: 'Documents', tripRequests: 'Trip Requests',
   help: 'Help & Support', settings: 'Settings',
 };
 
@@ -321,134 +342,6 @@ const PlaceholderScreen = ({ tabKey }: { tabKey: string }) => {
     </View>
   );
 };
-
-/* ════════════════════════════════════════
-   SETTINGS SCREEN — collapsible card, same
-   pattern as the dashboard's Filters bar
-════════════════════════════════════════ */
-const SettingsChevronIcon = ({ color = C.amber }: IconColorProp) => (
-  <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
-    <Path d="M6 9l6 6 6-6" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-const MoonFieldIcon = ({ color = C.amber }: IconColorProp) => (
-  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-    <Path d="M20 14.5A8.5 8.5 0 119.5 4a7 7 0 0010.5 10.5z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
-  </Svg>
-);
-
-const GlobeFieldIcon = ({ color = C.amber }: IconColorProp) => (
-  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-    <Path d="M12 21a9 9 0 100-18 9 9 0 000 18z" stroke={color} strokeWidth={1.8} />
-    <Path d="M3 12h18M12 3c2.4 2.5 3.6 5.6 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.6-3.6-9S9.6 5.5 12 3z" stroke={color} strokeWidth={1.8} />
-  </Svg>
-);
-
-const LANGUAGE_OPTIONS = ['English', 'Filipino'];
-
-const SettingsScreen = () => {
-  const { C, isDark, toggleDarkMode } = useAppTheme();
-  const st = useMemo(() => makeSettingsStyles(C), [C]);
-  const [language, setLanguage] = useState('English');
-  const [showLanguagePicker, setShowLanguagePicker] = useState(false);
-
-  return (
-    <View style={{ flex: 1 }}>
-      <View style={st.panel}>
-        <View style={st.field}>
-          <Text style={st.fieldLabel}>DARK MODE</Text>
-          <View style={st.fieldBox}>
-            <MoonFieldIcon color={C.amber} />
-            <Text style={st.fieldValue}>{isDark ? 'On' : 'Off'}</Text>
-            <View style={{ flex: 1 }} />
-            <Switch
-              value={isDark}
-              onValueChange={(v) => toggleDarkMode(v)}
-              trackColor={{ false: C.divider, true: C.amber }}
-              thumbColor={C.white}
-            />
-          </View>
-        </View>
-
-        <View style={st.field}>
-          <Text style={st.fieldLabel}>LANGUAGE</Text>
-          <TouchableOpacity style={st.fieldBox} activeOpacity={0.8} onPress={() => setShowLanguagePicker(true)}>
-            <GlobeFieldIcon color={C.amber} />
-            <Text style={st.fieldValue}>{language}</Text>
-            <View style={{ flex: 1 }} />
-            <SettingsChevronIcon color={C.amber} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <Copyright />
-
-      <Modal
-        visible={showLanguagePicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowLanguagePicker(false)}
-        statusBarTranslucent
-      >
-        <TouchableOpacity style={st.pmBackdrop} activeOpacity={1} onPress={() => setShowLanguagePicker(false)}>
-          <TouchableOpacity style={st.pmSheet} activeOpacity={1}>
-            <Text style={st.pmTitle}>Language</Text>
-            {LANGUAGE_OPTIONS.map((opt) => {
-              const isSelected = opt === language;
-              return (
-                <TouchableOpacity
-                  key={opt}
-                  style={[st.pmRow, isSelected && st.pmRowSelected]}
-                  activeOpacity={0.75}
-                  onPress={() => { setLanguage(opt); setShowLanguagePicker(false); }}
-                >
-                  <Text style={[st.pmRowText, isSelected && st.pmRowTextSelected]}>{opt}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-    </View>
-  );
-};
-
-const makeSettingsStyles = (C: ColorPalette) => StyleSheet.create({
-  panel: {
-    marginHorizontal: 16, marginTop: 16, paddingHorizontal: 14, paddingVertical: 12,
-    backgroundColor: C.cardBg, borderRadius: 14,
-    borderWidth: 1, borderColor: C.divider,
-    gap: 12,
-    ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
-      android: { elevation: 1 },
-    }),
-  },
-  field: { gap: 6 },
-  fieldLabel: { fontSize: 9.5, fontWeight: '800', color: C.brownMid, opacity: 0.65, letterSpacing: 0.5 },
-  fieldBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: C.lightBg, borderRadius: 12,
-    paddingVertical: 12, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: C.divider,
-  },
-  fieldValue: { fontSize: 13, fontWeight: '700', color: C.brown, flexShrink: 1 },
-  pmBackdrop: { flex: 1, backgroundColor: 'rgba(59,26,12,0.5)', justifyContent: 'flex-end' },
-  pmSheet: {
-    backgroundColor: C.cardBg,
-    borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    paddingHorizontal: 18, paddingTop: 16, paddingBottom: 30,
-  },
-  pmTitle: { fontSize: 13, fontWeight: '900', color: C.brown, marginBottom: 10, letterSpacing: 0.3 },
-  pmRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.divider + '55',
-  },
-  pmRowSelected:     {},
-  pmRowText:         { fontSize: 13, color: C.brownMid, fontWeight: '600' },
-  pmRowTextSelected: { color: C.amber, fontWeight: '800' },
-});
 
 /* ════════════════════════════════════════
    TOP NAV BAR
@@ -677,13 +570,13 @@ type BottomNavItem = { key: string; label: string; Icon: React.FC<IconColorProp>
 const BOTTOM_NAV_ITEMS: BottomNavItem[] = [
   { key: 'dashboard',     label: 'Dashboard',     Icon: HomeIcon },
   { key: 'messages',      label: 'Messages',      Icon: MessagesIcon, badge: 12 },
-  { key: 'notifications', label: 'Notifications', Icon: BellIcon, badge: 3 },
+  { key: 'notifications', label: 'Notifications', Icon: BellIcon },
   { key: 'accounts',      label: 'Me',            Icon: AccountsIcon },
 ];
 
 const BottomNavBar = ({
-  active, onSelect, insetBottom,
-}: { active: string; onSelect: (key: string) => void; insetBottom: number }) => {
+  active, onSelect, insetBottom, notificationsBadge,
+}: { active: string; onSelect: (key: string) => void; insetBottom: number; notificationsBadge: number }) => {
   const { C } = useAppTheme();
   const bn = useMemo(() => makeBottomNavStyles(C), [C]);
   return (
@@ -691,6 +584,7 @@ const BottomNavBar = ({
       {BOTTOM_NAV_ITEMS.map((item) => {
         const isActive = active === item.key;
         const color = isActive ? C.amber : C.brownMid;
+        const badge = item.key === 'notifications' ? (notificationsBadge > 0 ? notificationsBadge : undefined) : item.badge;
         return (
           <TouchableOpacity
             key={item.key}
@@ -700,9 +594,9 @@ const BottomNavBar = ({
           >
             <View style={bn.iconWrap}>
               <item.Icon color={color} />
-              {item.badge !== undefined && (
+              {badge !== undefined && (
                 <View style={bn.badge}>
-                  <Text style={bn.badgeText}>{item.badge}</Text>
+                  <Text style={bn.badgeText}>{badge}</Text>
                 </View>
               )}
             </View>
@@ -753,14 +647,29 @@ function AdminDashboardInner() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { C, isDark } = useAppTheme();
+  const { user } = useAuth();
 
   const [sidebarOpen,  setSidebarOpen]  = useState(false);
   const [activeTab,    setActiveTab]    = useState('dashboard');
   const [showWelcome,  setShowWelcome]  = useState(true);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [pendingMessageClient, setPendingMessageClient] = useState<string | null>(null);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   // 0 = none, 1 = menu
   const [tooltipStep,  setTooltipStep]  = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchUnread = () => {
+      fetch(`${NOTIFICATIONS_UNREAD_COUNT_API_URL}&recipientType=admin&recipientId=${user.id}`)
+        .then((res) => res.json())
+        .then((result) => { if (result.status === 'success') setUnreadNotifications(result.data.unreadCount); })
+        .catch(() => {});
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [user, activeTab]);
 
   const slideAnim   = useRef(new Animated.Value(-SIDEBAR_W)).current;
   const overlayAnim = useRef(new Animated.Value(0)).current;
@@ -839,15 +748,21 @@ function AdminDashboardInner() {
           )
           : activeTab === 'payments'
           ? <PaymentsScreen />
+          : activeTab === 'documents'
+          ? <AdminDocumentsScreen />
+          : activeTab === 'tripRequests'
+          ? <TripRequestsScreen />
           : activeTab === 'accounts'
           ? <AccountsScreen />
           : activeTab === 'settings'
-          ? <SettingsScreen />
+          ? <AdminSettingsScreen />
+          : activeTab === 'notifications'
+          ? <NotificationsScreen recipientId={user?.id} onNavigateTab={setActiveTab} />
           : <PlaceholderScreen tabKey={activeTab} />
         }
       </View>
 
-      <BottomNavBar active={activeTab} onSelect={handleSelect} insetBottom={insets.bottom} />
+      <BottomNavBar active={activeTab} onSelect={handleSelect} insetBottom={insets.bottom} notificationsBadge={unreadNotifications} />
 
       {sidebarOpen && (
         <>

@@ -15,6 +15,9 @@ import {
   BookingHeatmapPanel, PeakHoursPanel,
   RevenueBreakdownPanel, BookingStatusPanel,
   RecentBookingsPanel, RecentActivitiesPanel,
+  CommissionSummaryPanel, CommissionTrendPanel,
+  CommissionByPackagePanel, CommissionByDestinationPanel,
+  RevenueVsCommissionPanel, CommissionTablePanel, BookingsByCategoryPanel,
 } from './DashboardPanels';
 import { DEFAULT_FILTERS, DashboardData } from './mockData';
 import { DASHBOARD_DATA_API_URL } from '@/constants/api';
@@ -79,6 +82,14 @@ export default function DashboardOverview() {
 
           <RevenueBreakdownPanel slices={data.revenueBreakdown} totalLabel={data.revenueTotalLabel} />
           <BookingStatusPanel rows={data.bookingStatusRows} total={data.bookingStatusTotal} />
+
+          <CommissionSummaryPanel summary={data.commissionSummary} />
+          <CommissionTrendPanel trend={data.commissionTrend} />
+          <RevenueVsCommissionPanel data={data.revenueVsCommission} />
+          <CommissionByPackagePanel slices={data.commissionByPackage} />
+          <CommissionByDestinationPanel slices={data.commissionByDestination} />
+          <BookingsByCategoryPanel rows={data.bookingsByCategory} />
+          <CommissionTablePanel rows={data.commissionTable} />
 
           <RecentBookingsPanel bookings={data.recentBookings} />
           <RecentActivitiesPanel activities={data.recentActivities} />

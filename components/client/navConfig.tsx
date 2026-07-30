@@ -10,7 +10,7 @@ import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { C } from './theme';
 
 export type IconProps = { color?: string };
-export type TabKey = 'dashboard' | 'tours' | 'plan' | 'bookings' | 'documents' | 'messages' | 'account';
+export type TabKey = 'dashboard' | 'tours' | 'plan' | 'bookings' | 'documents' | 'messages' | 'notifications' | 'account';
 
 const GridIcon = ({ color = C.brownMid }: IconProps) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
@@ -55,6 +55,13 @@ const MessageIcon = ({ color = C.brownMid }: IconProps) => (
   </Svg>
 );
 
+const BellIcon = ({ color = C.brownMid }: IconProps) => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill={color}>
+    <Path d="M12 2a6 6 0 00-6 6v3.6c0 .7-.24 1.38-.68 1.92L4 15.5c-.7.86-.08 2.15 1.02 2.15h13.96c1.1 0 1.72-1.29 1.02-2.15l-1.32-2.5A3 3 0 0118 11.6V8a6 6 0 00-6-6z" />
+    <Path d="M9.5 19.5a2.5 2.5 0 005 0h-5z" />
+  </Svg>
+);
+
 const AccountIcon = ({ color = C.brownMid }: IconProps) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
     <Circle cx={12} cy={8} r={3.6} stroke={color} strokeWidth={1.8} />
@@ -73,16 +80,18 @@ export const BOTTOM_NAV_TABS: NavTabDef[] = [
 
 /** Shown in the sidebar's Main Menu. */
 export const SIDEBAR_NAV_TABS: NavTabDef[] = [
-  { key: 'tours',     label: 'Tours',        Icon: MapIcon },
-  { key: 'plan',      label: 'Plan a Trip',  Icon: PlanIcon },
-  { key: 'bookings',  label: 'My Bookings',  Icon: BagIcon },
-  { key: 'documents', label: 'Documents',    Icon: DocumentIcon },
+  { key: 'tours',         label: 'Tours',         Icon: MapIcon },
+  { key: 'plan',          label: 'Plan a Trip',   Icon: PlanIcon },
+  { key: 'bookings',      label: 'My Bookings',   Icon: BagIcon },
+  { key: 'documents',     label: 'Documents',     Icon: DocumentIcon },
+  { key: 'notifications', label: 'Notifications', Icon: BellIcon },
 ];
 
 export const TAB_META: Record<Exclude<TabKey, 'dashboard' | 'account'>, { emoji: string; label: string }> = {
-  tours:      { emoji: '🗺️', label: 'Tours' },
-  plan:       { emoji: '✈️', label: 'Plan a Trip' },
-  bookings:   { emoji: '🧳', label: 'My Bookings' },
-  documents:  { emoji: '📄', label: 'Documents' },
-  messages:   { emoji: '✉️', label: 'Messages' },
+  tours:         { emoji: '🗺️', label: 'Tours' },
+  plan:          { emoji: '✈️', label: 'Plan a Trip' },
+  bookings:      { emoji: '🧳', label: 'My Bookings' },
+  documents:     { emoji: '📄', label: 'Documents' },
+  messages:      { emoji: '✉️', label: 'Messages' },
+  notifications: { emoji: '🔔', label: 'Notifications' },
 };

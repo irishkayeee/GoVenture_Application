@@ -63,9 +63,12 @@ function ProgressRing({ percent }: { percent: number }) {
   );
 }
 
-function DocumentCard({ doc, onToggleUpload, width, busy }: { doc: RequiredDocument; onToggleUpload: () => void; width: any; busy?: boolean }) {
+function DocumentCard({ doc, onUpload, onRemove, width, busy }: { doc: RequiredDocument; onUpload: () => void; onRemove: () => void; width: any; busy?: boolean }) {
   const [expanded, setExpanded] = useState(false);
-  const submitted = doc.status !== 'Pending Upload';
+  const approved = doc.status === 'Approved';
+  const needsReupload = doc.status === 'Rejected' || doc.status === 'Reupload Requested';
+  const submitted = doc.status === 'Submitted' || approved;
+  const pillDone = approved || submitted;
 
   return (
     <View style={[dc.card, { width }]}>
@@ -73,16 +76,23 @@ function DocumentCard({ doc, onToggleUpload, width, busy }: { doc: RequiredDocum
         <View style={dc.iconBox}><DocIcon /></View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            {!submitted && <View style={dc.dot} />}
+            {(doc.status === 'Pending Upload' || needsReupload) && <View style={[dc.dot, needsReupload && { backgroundColor: C.danger }]} />}
             <Text style={dc.title}>{doc.title}</Text>
           </View>
         </View>
-        <View style={[dc.statusPill, submitted && dc.statusPillDone]}>
-          <Text style={[dc.statusPillText, submitted && dc.statusPillTextDone]}>{doc.status}</Text>
+        <View style={[dc.statusPill, pillDone && dc.statusPillDone, needsReupload && dc.statusPillRejected]}>
+          <Text style={[dc.statusPillText, pillDone && dc.statusPillTextDone, needsReupload && dc.statusPillTextRejected]}>{doc.status}</Text>
         </View>
       </View>
 
       <Text style={dc.desc}>{doc.description}</Text>
+
+      {needsReupload && !!doc.adminComment && (
+        <View style={dc.commentBox}>
+          <Text style={dc.commentLabel}>Reviewer note</Text>
+          <Text style={dc.commentText}>{doc.adminComment}</Text>
+        </View>
+      )}
 
       <TouchableOpacity style={dc.instructionsRow} activeOpacity={0.75} onPress={() => setExpanded((v) => !v)}>
         <DocIcon color={C.amber} />
@@ -97,13 +107,15 @@ function DocumentCard({ doc, onToggleUpload, width, busy }: { doc: RequiredDocum
           {doc.fileName ? (submitted ? `✓ ${doc.fileName}` : doc.fileName) : 'No file uploaded yet'}
         </Text>
         <TouchableOpacity
-          style={[dc.uploadBtn, submitted && dc.uploadBtnDone, busy && { opacity: 0.6 }]}
+          style={[dc.uploadBtn, submitted && dc.uploadBtnDone, needsReupload && dc.uploadBtnReupload, busy && { opacity: 0.6 }]}
           activeOpacity={0.85}
-          onPress={onToggleUpload}
-          disabled={busy}
+          onPress={approved ? undefined : submitted ? onRemove : onUpload}
+          disabled={busy || approved}
         >
           {busy ? (
             <ActivityIndicator size="small" color={submitted ? C.success : '#FFFFFF'} />
+          ) : needsReupload ? (
+            <Text style={dc.uploadBtnTextReupload}>Re-upload</Text>
           ) : (
             <>
               {submitted ? <CheckIcon /> : null}
@@ -184,7 +196,7 @@ export default function DocumentsScreen() {
       setByBooking((prev) => ({
         ...prev,
         [selectedBooking.id]: (prev[selectedBooking.id] ?? []).map((d) =>
-          d.id === docId ? { ...d, status: uploadResult.data.status, fileName: uploadResult.data.fileName } : d
+          d.id === docId ? { ...d, status: uploadResult.data.status, fileName: uploadResult.data.fileName, adminComment: null } : d
         ),
       }));
     } catch {
@@ -208,19 +220,12 @@ export default function DocumentsScreen() {
       setByBooking((prev) => ({
         ...prev,
         [selectedBooking.id]: (prev[selectedBooking.id] ?? []).map((d) =>
-          d.id === docId ? { ...d, status: 'Pending Upload', fileName: null } : d
+          d.id === docId ? { ...d, status: 'Pending Upload', fileName: null, adminComment: null } : d
         ),
       }));
     } finally {
       setBusyDocId(null);
     }
-  };
-
-  const toggleUpload = (docId: string) => {
-    const doc = documents.find((d) => d.id === docId);
-    if (!doc) return;
-    if (doc.status === 'Pending Upload') handleUpload(docId);
-    else handleRemove(docId);
   };
 
   const required = documents.length;
@@ -315,7 +320,8 @@ export default function DocumentsScreen() {
             doc={doc}
             width={cardWidth}
             busy={busyDocId === doc.id}
-            onToggleUpload={() => toggleUpload(doc.id)}
+            onUpload={() => handleUpload(doc.id)}
+            onRemove={() => handleRemove(doc.id)}
           />
         ))}
       </View>
@@ -375,10 +381,16 @@ const dc = StyleSheet.create({
 
   statusPill: { backgroundColor: C.lightBg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
   statusPillDone: { backgroundColor: '#EAF7EC' },
+  statusPillRejected: { backgroundColor: '#FCE4E1' },
   statusPillText: { fontSize: 9.5, fontWeight: '800', color: C.brownMid },
   statusPillTextDone: { color: C.success },
+  statusPillTextRejected: { color: C.danger },
 
   desc: { fontSize: 11, color: C.brownMid, marginTop: 10, lineHeight: 15 },
+
+  commentBox: { backgroundColor: '#FCE4E1', borderRadius: 10, padding: 10, marginTop: 10 },
+  commentLabel: { fontSize: 9.5, fontWeight: '800', color: C.danger, letterSpacing: 0.3 },
+  commentText: { fontSize: 11, color: C.brownMid, marginTop: 3, lineHeight: 15 },
 
   instructionsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, borderTopWidth: 1, borderTopColor: C.divider, marginTop: 12, paddingTop: 10 },
   instructionsLabel: { fontSize: 11, fontWeight: '800', color: C.brown },
@@ -388,6 +400,8 @@ const dc = StyleSheet.create({
   fileText: { fontSize: 10, color: C.brownMid, opacity: 0.75, flexShrink: 1 },
   uploadBtn: { backgroundColor: C.danger, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, flexShrink: 0 },
   uploadBtnDone: { backgroundColor: '#EAF7EC', flexDirection: 'row', alignItems: 'center', gap: 4 },
+  uploadBtnReupload: { backgroundColor: C.amber },
   uploadBtnText: { fontSize: 10.5, fontWeight: '800', color: '#FFFFFF' },
   uploadBtnTextDone: { color: C.success },
+  uploadBtnTextReupload: { fontSize: 10.5, fontWeight: '800', color: '#FFFFFF' },
 });

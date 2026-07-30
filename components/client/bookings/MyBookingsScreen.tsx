@@ -231,9 +231,78 @@ function DetailField({ label, value }: { label: string; value: string }) {
   );
 }
 
+const StarIcon = ({ filled }: { filled: boolean }) => (
+  <Svg width={30} height={30} viewBox="0 0 24 24" fill={filled ? C.amber : 'none'}>
+    <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" stroke={filled ? C.amber : C.brownMid} strokeWidth={1.5} strokeLinejoin="round" />
+  </Svg>
+);
+
+function RateTourModal({ visible, onClose, onSubmit }: { visible: boolean; onClose: () => void; onSubmit: (rating: number, text: string) => Promise<void> }) {
+  const [rating, setRating] = useState(0);
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async () => {
+    if (rating < 1) { setError('Please select a star rating.'); return; }
+    setError('');
+    setSubmitting(true);
+    try {
+      await onSubmit(rating, text.trim());
+      setRating(0);
+      setText('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={rt.overlay}>
+        <View style={rt.card}>
+          <Text style={rt.title}>Rate This Tour</Text>
+          <Text style={rt.subtitle}>How was your experience?</Text>
+          <View style={rt.starsRow}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <TouchableOpacity key={n} activeOpacity={0.7} onPress={() => setRating(n)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <StarIcon filled={n <= rating} />
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TextInput
+            style={rt.input}
+            placeholder="Share more about your trip (optional)"
+            placeholderTextColor={C.brownMid + '80'}
+            value={text}
+            onChangeText={setText}
+            multiline
+            numberOfLines={3}
+          />
+          {!!error && <Text style={rt.errorText}>{error}</Text>}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+            <TouchableOpacity style={rt.cancelBtn} activeOpacity={0.8} onPress={onClose} disabled={submitting}>
+              <Text style={rt.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[rt.submitBtn, submitting && { opacity: 0.7 }]} activeOpacity={0.85} onPress={handleSubmit} disabled={submitting}>
+              {submitting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={rt.submitText}>Submit</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onClose: () => void }) {
   const insets = useSafeAreaInsets();
+  const { submitReview } = useBookings();
+  const [rateModalVisible, setRateModalVisible] = useState(false);
   if (!booking) return null;
+
+  const handleSubmitReview = async (rating: number, text: string) => {
+    const result = await submitReview(booking.id, rating, text);
+    if (result.ok) setRateModalVisible(false);
+  };
 
   const downloadDocuments = async () => {
     const summary = [
@@ -287,6 +356,19 @@ function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onC
               <View style={dt.paymentRow}><Text style={dt.paymentLabel}>Method</Text><Text style={dt.paymentValue}>{booking.paymentMethod}</Text></View>
               <View style={dt.paymentRow}><Text style={dt.paymentLabel}>Pay Status</Text><Text style={dt.paymentValue}>{booking.paymentStatus}</Text></View>
             </View>
+
+            {booking.status === 'Completed' && (
+              <View style={dt.reviewCard}>
+                {booking.hasReview ? (
+                  <Text style={dt.reviewDoneText}>✓ You've already reviewed this tour. Thanks!</Text>
+                ) : (
+                  <TouchableOpacity style={dt.rateBtn} activeOpacity={0.85} onPress={() => setRateModalVisible(true)}>
+                    <StarIcon filled />
+                    <Text style={dt.rateBtnText}>Rate This Tour</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
           </ScrollView>
 
           <View style={[dt.footer, { paddingBottom: Math.max(14, insets.bottom) }]}>
@@ -300,6 +382,8 @@ function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onC
           </View>
         </View>
       </View>
+
+      <RateTourModal visible={rateModalVisible} onClose={() => setRateModalVisible(false)} onSubmit={handleSubmitReview} />
       </SafeAreaProvider>
     </Modal>
   );
@@ -556,6 +640,14 @@ const dt = StyleSheet.create({
   paymentLabel: { fontSize: 12, color: C.brownMid },
   paymentValue: { fontSize: 12.5, fontWeight: '800', color: C.brown },
 
+  reviewCard: { marginTop: 14 },
+  reviewDoneText: { fontSize: 12, color: C.success, fontWeight: '700', textAlign: 'center' },
+  rateBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: C.lightBg, borderWidth: 1, borderColor: C.amber, borderRadius: 12, paddingVertical: 12,
+  },
+  rateBtnText: { fontSize: 12.5, fontWeight: '800', color: C.brown },
+
   footer: { flexDirection: 'row', gap: 10, padding: 16, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.divider },
   footerCloseBtn: { flex: 1, backgroundColor: C.brown, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingVertical: 13 },
   footerCloseText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
@@ -564,4 +656,27 @@ const dt = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', paddingVertical: 13,
   },
   footerDownloadText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
+});
+
+const rt = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(59,26,12,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  card: {
+    width: '100%', maxWidth: 380, backgroundColor: C.cardBg, borderRadius: 18, padding: 20,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } },
+      android: { elevation: 8 },
+    }),
+  },
+  title: { fontSize: 15.5, fontWeight: '900', color: C.brown, textAlign: 'center' },
+  subtitle: { fontSize: 12, color: C.brownMid, marginTop: 4, textAlign: 'center' },
+  starsRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginTop: 16 },
+  input: {
+    marginTop: 16, backgroundColor: C.lightBg, borderRadius: 12, borderWidth: 1, borderColor: C.divider,
+    paddingHorizontal: 13, paddingVertical: 11, fontSize: 13, color: C.brown, textAlignVertical: 'top', minHeight: 70,
+  },
+  errorText: { color: C.danger, fontSize: 11.5, fontWeight: '700', marginTop: 8, textAlign: 'center' },
+  cancelBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 12, paddingVertical: 12, borderWidth: 1, borderColor: C.divider, backgroundColor: C.lightBg },
+  cancelText: { fontSize: 12.5, fontWeight: '800', color: C.brownMid },
+  submitBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 12, paddingVertical: 12, backgroundColor: C.amber },
+  submitText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
 });

@@ -12,7 +12,8 @@ import Copyright from '@/components/Copyright';
 import { C as LIGHT_C } from '../dashboard/theme';
 import { useAppTheme, ColorPalette } from '../ThemeContext';
 import { Booking, BookingStatus, STATUS_FILTER_OPTIONS, formatPeso } from './mockData';
-import { BOOKINGS_LIST_API_URL, BOOKING_UPDATE_STATUS_API_URL } from '@/constants/api';
+import { BOOKINGS_LIST_API_URL, BOOKING_UPDATE_STATUS_API_URL, EXPORT_BOOKINGS_CSV_API_URL } from '@/constants/api';
+import { downloadAndShareCsv } from '../exportCsv';
 import BookingDetailModal from './BookingDetailModal';
 
 const STATUS_STYLE: Record<BookingStatus, { bg: string; color: string; accent: string }> = {
@@ -66,6 +67,12 @@ const CalendarIcon = ({ color = LIGHT_C.brownMid }: { color?: string }) => (
   <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
     <Path d="M5 6a2 2 0 012-2h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6z" stroke={color} strokeWidth={1.8} />
     <Path d="M16 2v4M8 2v4M3 10h18" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+  </Svg>
+);
+
+const DownloadIcon = ({ color = LIGHT_C.amber }: { color?: string }) => (
+  <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
+    <Path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3a1 1 0 001 1h14a1 1 0 001-1v-3" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
 
@@ -159,6 +166,18 @@ export default function BookingsScreen({ onMessageClient }: { onMessageClient?: 
   const [selected, setSelected] = useState<Booking | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await downloadAndShareCsv(EXPORT_BOOKINGS_CSV_API_URL, `bookings_report_${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch {
+      // Sharing cancelled or unavailable — nothing to do.
+    } finally {
+      setExporting(false);
+    }
+  };
   const [error, setError] = useState('');
 
   const loadBookings = useCallback(async () => {
@@ -250,6 +269,9 @@ export default function BookingsScreen({ onMessageClient }: { onMessageClient?: 
           >
             <FunnelIcon color={statusFilter ? C.white : C.amber} />
             <Text style={[bs.filterBtnText, statusFilter && bs.filterBtnTextActive]}>Filter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={bs.exportBtn} activeOpacity={0.8} onPress={handleExport} disabled={exporting}>
+            {exporting ? <ActivityIndicator color={C.amber} size="small" /> : <DownloadIcon color={C.amber} />}
           </TouchableOpacity>
         </View>
 
@@ -364,6 +386,10 @@ const makeStyles = (C: ColorPalette) => StyleSheet.create({
   filterBtnActive: { backgroundColor: C.amber },
   filterBtnText: { fontSize: 12.5, fontWeight: '800', color: C.amber },
   filterBtnTextActive: { color: '#FFFFFF' },
+  exportBtn: {
+    width: 42, height: 42, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.cardBg, borderRadius: 12, borderWidth: 1.5, borderColor: C.amber,
+  },
 
   activeFilterRow: { paddingHorizontal: 16, marginTop: 10 },
   activeFilterChip: {

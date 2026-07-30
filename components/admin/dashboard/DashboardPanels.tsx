@@ -8,9 +8,10 @@ import { View, Text, StyleSheet, Dimensions, Platform } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { DONUT_COLORS, C as LIGHT_C } from './theme';
 import { useAppTheme, ColorPalette } from '../ThemeContext';
-import { MiniLineChart, MiniBarChart, DonutChart } from './charts';
+import { MiniLineChart, MiniBarChart, MiniDualBarChart, DonutChart } from './charts';
 import {
   DashboardData, StatCardData, BookingRowData, ActivityData, ActivityType,
+  CommissionSummaryData, CommissionTableRow,
 } from './mockData';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -431,4 +432,209 @@ const makeActivitiesStyles = (C: ColorPalette) => StyleSheet.create({
   icoWrap: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   text: { flex: 1, fontSize: 11, color: C.brown, lineHeight: 15 },
   time: { fontSize: 9, color: C.brownMid, opacity: 0.6, marginTop: 1 },
+});
+
+/* ════════════════════════════════════════
+   COMMISSION SUMMARY
+════════════════════════════════════════ */
+export const CommissionSummaryPanel = ({ summary }: { summary: CommissionSummaryData }) => {
+  const { C } = useAppTheme();
+  const cs = useMemo(() => makeCommissionSummaryStyles(C), [C]);
+  return (
+    <Panel title="Commission Summary" subtitle={summary.basedOn}>
+      <View style={cs.headRow}>
+        <Text style={cs.totalValue}>{summary.totalLabel}</Text>
+        <View style={cs.trendRow}>
+          {summary.trendPositive ? <TrendUpIcon color={C.success} /> : <TrendDownIcon color={C.danger} />}
+          <Text style={[cs.trendText, { color: summary.trendPositive ? C.success : C.danger }]}>{summary.trend}</Text>
+        </View>
+      </View>
+      <View style={cs.metaRow}>
+        <View style={cs.metaCell}>
+          <Text style={cs.metaLabel}>BOOKINGS</Text>
+          <Text style={cs.metaValue}>{summary.bookingCount}</Text>
+        </View>
+        <View style={cs.metaCell}>
+          <Text style={cs.metaLabel}>AVG / BOOKING</Text>
+          <Text style={cs.metaValue}>₱{Math.round(summary.avgPerBooking).toLocaleString('en-US')}</Text>
+        </View>
+        <View style={cs.metaCell}>
+          <Text style={cs.metaLabel}>HIGHEST</Text>
+          <Text style={cs.metaValue}>₱{Math.round(summary.highestBooking).toLocaleString('en-US')}</Text>
+        </View>
+      </View>
+    </Panel>
+  );
+};
+
+const makeCommissionSummaryStyles = (C: ColorPalette) => StyleSheet.create({
+  headRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 },
+  totalValue: { fontSize: 22, fontWeight: '900', color: C.brown },
+  trendRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  trendText: { fontSize: 10.5, fontWeight: '700' },
+  metaRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  metaCell: { flex: 1, backgroundColor: C.lightBg, borderRadius: 10, paddingVertical: 8, alignItems: 'center' },
+  metaLabel: { fontSize: 7.5, fontWeight: '800', color: C.brownMid, opacity: 0.65, letterSpacing: 0.3 },
+  metaValue: { fontSize: 12, fontWeight: '900', color: C.brown, marginTop: 3 },
+});
+
+/* ════════════════════════════════════════
+   COMMISSION TREND
+════════════════════════════════════════ */
+export const CommissionTrendPanel = ({ trend }: { trend: DashboardData['commissionTrend'] }) => {
+  const { C } = useAppTheme();
+  return (
+    <Panel title="Commission Trend" subtitle="Agency commission over the selected range">
+      <MiniLineChart values={trend.commission} labels={trend.dates} color="#9C27B0" width={PANEL_INNER_W} />
+    </Panel>
+  );
+};
+
+/* ════════════════════════════════════════
+   COMMISSION BY PACKAGE / DESTINATION
+════════════════════════════════════════ */
+export const CommissionByPackagePanel = ({ slices }: { slices: DashboardData['commissionByPackage'] }) => {
+  const { C } = useAppTheme();
+  const dw = useMemo(() => makeDonutWrapStyles(C), [C]);
+  return (
+    <Panel title="Commission by Package" subtitle="Top-earning tour packages">
+      {slices.length === 0 ? (
+        <Text style={{ fontSize: 11, opacity: 0.6 }}>No confirmed bookings in this range.</Text>
+      ) : (
+        <View style={dw.row}>
+          <View style={dw.donutWrap}>
+            <DonutChart slices={slices.map((s, i) => ({ value: s.value, color: DONUT_COLORS[i % DONUT_COLORS.length] }))} />
+          </View>
+          <DonutLegend items={slices.map((s) => ({ name: s.name, pct: s.pct, valueText: `₱${Math.round(s.value).toLocaleString('en-US')}` }))} />
+        </View>
+      )}
+    </Panel>
+  );
+};
+
+export const CommissionByDestinationPanel = ({ slices }: { slices: DashboardData['commissionByDestination'] }) => {
+  const { C } = useAppTheme();
+  const dp = useMemo(() => makeDestinationStyles(C), [C]);
+  const max = Math.max(1, ...slices.map((s) => s.value));
+  return (
+    <Panel title="Commission by Destination" subtitle="Top-earning destinations">
+      {slices.length === 0 ? (
+        <Text style={dp.empty}>No confirmed bookings in this range.</Text>
+      ) : slices.map((s, i) => (
+        <View key={s.name} style={[dp.row, i === slices.length - 1 && { borderBottomWidth: 0 }]}>
+          <View style={dp.rank}><Text style={dp.rankText}>{i + 1}</Text></View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={dp.name} numberOfLines={1}>{s.name}</Text>
+            <Text style={dp.count}>₱{Math.round(s.value).toLocaleString('en-US')}</Text>
+          </View>
+          <View style={dp.barTrack}>
+            <View style={[dp.barFill, { width: `${Math.round((s.value / max) * 100)}%` as any, backgroundColor: '#9C27B0' }]} />
+          </View>
+          <Text style={[dp.trend, { color: C.brownMid, width: 32 }]}>{s.pct}%</Text>
+        </View>
+      ))}
+    </Panel>
+  );
+};
+
+/* ════════════════════════════════════════
+   REVENUE VS COMMISSION
+════════════════════════════════════════ */
+export const RevenueVsCommissionPanel = ({ data }: { data: DashboardData['revenueVsCommission'] }) => {
+  const { C } = useAppTheme();
+  const rv = useMemo(() => makeRvcStyles(C), [C]);
+  return (
+    <Panel
+      title="Revenue vs. Commission"
+      subtitle="Total booking revenue against agency commission"
+      right={
+        <View style={rv.legendRow}>
+          <View style={rv.legendItem}><View style={[rv.dot, { backgroundColor: C.amber }]} /><Text style={rv.legendText}>Revenue</Text></View>
+          <View style={rv.legendItem}><View style={[rv.dot, { backgroundColor: '#9C27B0' }]} /><Text style={rv.legendText}>Commission</Text></View>
+        </View>
+      }
+    >
+      <MiniDualBarChart
+        valuesA={data.revenue} valuesB={data.commission} labels={data.labels}
+        colorA={C.amber} colorB="#9C27B0" width={PANEL_INNER_W}
+      />
+    </Panel>
+  );
+};
+
+const makeRvcStyles = (C: ColorPalette) => StyleSheet.create({
+  legendRow: { flexDirection: 'row', gap: 10 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dot: { width: 7, height: 7, borderRadius: 3.5 },
+  legendText: { fontSize: 9, color: C.brownMid, opacity: 0.75 },
+});
+
+/* ════════════════════════════════════════
+   COMMISSION TABLE
+════════════════════════════════════════ */
+export const CommissionTablePanel = ({ rows }: { rows: CommissionTableRow[] }) => {
+  const { C } = useAppTheme();
+  const dp = useMemo(() => makeDestinationStyles(C), [C]);
+  const rb = useMemo(() => makeRecentBookingsStyles(C), [C]);
+  return (
+    <Panel title="Commission Details" subtitle="Per-booking commission breakdown">
+      {rows.length === 0 ? (
+        <Text style={dp.empty}>No confirmed bookings in this range.</Text>
+      ) : (
+        <View style={rb.table}>
+          <View style={rb.headRow}>
+            <Text style={[rb.headCell, { flex: 1.7 }]}>BOOKING</Text>
+            <Text style={[rb.headCell, { flex: 1.8 }]}>DESTINATION</Text>
+            <Text style={[rb.headCell, { flex: 1.2 }]}>AMOUNT</Text>
+            <Text style={[rb.headCell, { flex: 1.2 }]}>COMMISSION</Text>
+          </View>
+          {rows.map((r, i) => (
+            <View key={r.reference} style={[rb.row, i === rows.length - 1 && { borderBottomWidth: 0 }]}>
+              <View style={{ flex: 1.7, minWidth: 0 }}>
+                <Text style={rb.cellText} numberOfLines={1}>{r.reference}</Text>
+                <Text style={[rb.cellText, { fontSize: 9, opacity: 0.6 }]} numberOfLines={1}>{r.customer}</Text>
+              </View>
+              <Text style={[rb.cellText, { flex: 1.8 }]} numberOfLines={1}>{r.destination}</Text>
+              <Text style={[rb.cellText, { flex: 1.2 }]} numberOfLines={1}>{r.bookingAmount}</Text>
+              <Text style={[rb.amount, { flex: 1.2, color: '#9C27B0' }]} numberOfLines={1}>{r.commission}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </Panel>
+  );
+};
+
+/* ════════════════════════════════════════
+   BOOKINGS BY CATEGORY (Domestic vs International)
+════════════════════════════════════════ */
+export const BookingsByCategoryPanel = ({ rows }: { rows: DashboardData['bookingsByCategory'] }) => {
+  const { C } = useAppTheme();
+  const bc = useMemo(() => makeCategoryStyles(C), [C]);
+  const totalBookings = rows.reduce((a, r) => a + r.bookings, 0) || 1;
+  return (
+    <Panel title="Bookings by Category" subtitle="Domestic vs. international demand">
+      <View style={bc.row}>
+        {rows.map((r, i) => (
+          <View key={r.name} style={bc.card}>
+            <View style={[bc.dot, { backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }]} />
+            <Text style={bc.name}>{r.name}</Text>
+            <Text style={bc.count}>{r.bookings}</Text>
+            <Text style={bc.pct}>{Math.round((r.bookings / totalBookings) * 100)}% of bookings</Text>
+            <Text style={bc.revenue}>₱{Math.round(r.revenue).toLocaleString('en-US')} revenue</Text>
+          </View>
+        ))}
+      </View>
+    </Panel>
+  );
+};
+
+const makeCategoryStyles = (C: ColorPalette) => StyleSheet.create({
+  row: { flexDirection: 'row', gap: 10 },
+  card: { flex: 1, backgroundColor: C.lightBg, borderRadius: 12, padding: 12, alignItems: 'center' },
+  dot: { width: 10, height: 10, borderRadius: 5, marginBottom: 6 },
+  name: { fontSize: 10.5, fontWeight: '800', color: C.brown },
+  count: { fontSize: 18, fontWeight: '900', color: C.brown, marginTop: 4 },
+  pct: { fontSize: 9, color: C.brownMid, opacity: 0.7, marginTop: 2 },
+  revenue: { fontSize: 9.5, fontWeight: '700', color: C.amber, marginTop: 4 },
 });
