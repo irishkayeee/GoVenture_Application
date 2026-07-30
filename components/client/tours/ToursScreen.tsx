@@ -227,12 +227,179 @@ function FieldPopover({ visible, children }: { visible: boolean; children: React
   return <View style={sb.popover}>{children}</View>;
 }
 
-const DATE_WINDOWS: { label: string; test: (startISO: string) => boolean }[] = [
-  { label: 'Any time', test: () => true },
-  { label: 'This month', test: (iso) => { const d = new Date(iso), n = new Date(); return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth(); } },
-  { label: 'Next month', test: (iso) => { const d = new Date(iso), n = new Date(); const next = new Date(n.getFullYear(), n.getMonth() + 1, 1); return d.getFullYear() === next.getFullYear() && d.getMonth() === next.getMonth(); } },
-  { label: 'In 2+ months', test: (iso) => { const d = new Date(iso), n = new Date(); const twoOut = new Date(n.getFullYear(), n.getMonth() + 2, 1); return d.getTime() >= twoOut.getTime(); } },
-];
+/* ── Travel-date range calendar ── */
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const toISODate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const isSameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+function buildMonthCells(year: number, month: number): (Date | null)[] {
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+function formatDateLabel(iso: string) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function MonthGrid({
+  year, month, today, rangeStart, rangeEnd, onSelectDay,
+}: {
+  year: number;
+  month: number;
+  today: Date;
+  rangeStart: Date | null;
+  rangeEnd: Date | null;
+  onSelectDay: (d: Date) => void;
+}) {
+  const cells = buildMonthCells(year, month);
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={cal.monthTitle}>{MONTH_NAMES[month]} {year}</Text>
+      <View style={cal.weekRow}>
+        {WEEKDAY_LETTERS.map((w, i) => (
+          <Text key={i} style={cal.weekLetter}>{w}</Text>
+        ))}
+      </View>
+      <View style={cal.grid}>
+        {cells.map((d, i) => {
+          if (!d) return <View key={i} style={cal.cell} />;
+          const isPast = d.getTime() < today.getTime();
+          const isStart = rangeStart !== null && isSameDay(d, rangeStart);
+          const isEnd = rangeEnd !== null && isSameDay(d, rangeEnd);
+          const inRange = rangeStart !== null && rangeEnd !== null && d.getTime() > rangeStart.getTime() && d.getTime() < rangeEnd.getTime();
+          return (
+            <View key={i} style={cal.cell}>
+              {inRange && <View style={cal.rangeFill} pointerEvents="none" />}
+              <TouchableOpacity
+                disabled={isPast}
+                activeOpacity={0.7}
+                onPress={() => onSelectDay(d)}
+                style={[cal.dayBtn, (isStart || isEnd) && cal.dayBtnActive]}
+              >
+                <Text style={[cal.dayText, isPast && cal.dayTextPast, (isStart || isEnd) && cal.dayTextActive]}>
+                  {d.getDate()}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function TravelDateCalendarModal({
+  visible, onClose, initialStart, initialEnd, onApply,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  initialStart: string | null;
+  initialEnd: string | null;
+  onApply: (start: string | null, end: string | null) => void;
+}) {
+  const today = dayStart(new Date());
+  const [cursor, setCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [rangeStart, setRangeStart] = useState<Date | null>(initialStart ? dayStart(new Date(`${initialStart}T00:00:00`)) : null);
+  const [rangeEnd, setRangeEnd] = useState<Date | null>(initialEnd ? dayStart(new Date(`${initialEnd}T00:00:00`)) : null);
+
+  useEffect(() => {
+    if (!visible) return;
+    setRangeStart(initialStart ? dayStart(new Date(`${initialStart}T00:00:00`)) : null);
+    setRangeEnd(initialEnd ? dayStart(new Date(`${initialEnd}T00:00:00`)) : null);
+    const base = initialStart ? dayStart(new Date(`${initialStart}T00:00:00`)) : today;
+    setCursor(new Date(base.getFullYear(), base.getMonth(), 1));
+  }, [visible]);
+
+  if (!visible) return null;
+
+  const handleSelectDay = (d: Date) => {
+    if (!rangeStart || (rangeStart && rangeEnd)) {
+      setRangeStart(d);
+      setRangeEnd(null);
+    } else if (d.getTime() < rangeStart.getTime()) {
+      setRangeStart(d);
+      setRangeEnd(null);
+    } else if (d.getTime() === rangeStart.getTime()) {
+      setRangeStart(null);
+      setRangeEnd(null);
+    } else {
+      setRangeEnd(d);
+    }
+  };
+
+  const nextMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={cal.overlay}>
+        <View style={cal.card}>
+          <View style={cal.headerRow}>
+            <Text style={cal.headerTitle}>Select Travel Dates</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={cal.closeX}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={cal.navRow}>
+            <TouchableOpacity
+              style={cal.navBtn}
+              onPress={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1))}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={cal.navBtnText}>‹</Text>
+            </TouchableOpacity>
+            <Text style={cal.navRangeText}>
+              {MONTH_NAMES[cursor.getMonth()]} – {MONTH_NAMES[nextMonth.getMonth()]} {nextMonth.getFullYear()}
+            </Text>
+            <TouchableOpacity
+              style={cal.navBtn}
+              onPress={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1))}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={cal.navBtnText}>›</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={cal.monthsRow} showsVerticalScrollIndicator={false}>
+            <MonthGrid
+              year={cursor.getFullYear()} month={cursor.getMonth()} today={today}
+              rangeStart={rangeStart} rangeEnd={rangeEnd} onSelectDay={handleSelectDay}
+            />
+            <MonthGrid
+              year={nextMonth.getFullYear()} month={nextMonth.getMonth()} today={today}
+              rangeStart={rangeStart} rangeEnd={rangeEnd} onSelectDay={handleSelectDay}
+            />
+          </ScrollView>
+
+          <Text style={cal.helperText}>
+            You can search with just a start date, or a start date with an end date — either works.
+          </Text>
+
+          <View style={cal.footerRow}>
+            <TouchableOpacity onPress={() => { setRangeStart(null); setRangeEnd(null); }}>
+              <Text style={cal.clearText}>Clear dates</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={cal.applyBtn}
+              activeOpacity={0.85}
+              onPress={() => { onApply(rangeStart ? toISODate(rangeStart) : null, rangeEnd ? toISODate(rangeEnd) : null); onClose(); }}
+            >
+              <Text style={cal.applyBtnText}>Apply</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 type Props = { initialSearch?: string };
 
@@ -242,9 +409,13 @@ export default function ToursScreen({ initialSearch }: Props) {
   const insets = useSafeAreaInsets();
 
   const [search, setSearch] = useState(initialSearch ?? '');
-  const [dateWindow, setDateWindow] = useState(DATE_WINDOWS[0].label);
-  const [dateOpen, setDateOpen] = useState(false);
-  const [travelers, setTravelers] = useState(2);
+  const [appliedSearch, setAppliedSearch] = useState(initialSearch ?? '');
+  const [dateStart, setDateStart] = useState<string | null>(null);
+  const [dateEnd, setDateEnd] = useState<string | null>(null);
+  const [appliedDateStart, setAppliedDateStart] = useState<string | null>(null);
+  const [appliedDateEnd, setAppliedDateEnd] = useState<string | null>(null);
+  const [calendarVisible, setCalendarVisible] = useState(false);
+  const [travelers, setTravelers] = useState(1);
   const [travelersOpen, setTravelersOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
@@ -270,13 +441,29 @@ export default function ToursScreen({ initialSearch }: Props) {
   useEffect(() => { loadTours(); }, []);
 
   const results = useMemo(() => {
-    const activeWindow = DATE_WINDOWS.find((w) => w.label === dateWindow) ?? DATE_WINDOWS[0];
+    const rangeStart = appliedDateStart ? new Date(`${appliedDateStart}T00:00:00`) : null;
+    const rangeEnd = appliedDateEnd ? new Date(`${appliedDateEnd}T23:59:59`) : null;
+
+    const dateMatches = (t: Tour) => {
+      if (!rangeStart) return true;
+      return t.departures.some((d) => {
+        const depStart = new Date(d.startISO);
+        const depEnd = new Date(d.endISO);
+        if (rangeEnd) {
+          // Start + end selected: any departure overlapping the searched range counts as available within it.
+          return depStart.getTime() <= rangeEnd.getTime() && depEnd.getTime() >= rangeStart.getTime();
+        }
+        // Start date only: available on or after that date.
+        return depEnd.getTime() >= rangeStart.getTime();
+      });
+    };
+
     let list = tours.filter((t) => {
-      if (search.trim() && !t.destination.toLowerCase().includes(search.trim().toLowerCase())) return false;
+      if (appliedSearch.trim() && !t.destination.toLowerCase().includes(appliedSearch.trim().toLowerCase())) return false;
       if (t.pricePerPerson > filters.priceMax) return false;
       if (filters.ratingMin !== null && t.rating < filters.ratingMin) return false;
       if (filters.includes.some((opt) => !t.includes.includes(opt))) return false;
-      if (!t.departures.some((d) => activeWindow.test(d.startISO))) return false;
+      if (!dateMatches(t)) return false;
       return true;
     });
     switch (filters.sort) {
@@ -286,7 +473,19 @@ export default function ToursScreen({ initialSearch }: Props) {
       default:        list = [...list].sort((a, b) => b.reviewCount - a.reviewCount);
     }
     return list;
-  }, [search, dateWindow, filters]);
+  }, [appliedSearch, appliedDateStart, appliedDateEnd, tours, filters]);
+
+  const runSearch = () => {
+    setAppliedSearch(search);
+    setAppliedDateStart(dateStart);
+    setAppliedDateEnd(dateEnd);
+  };
+
+  const dateFieldLabel = dateStart
+    ? dateEnd
+      ? `${formatDateLabel(dateStart)} – ${formatDateLabel(dateEnd)}`
+      : `${formatDateLabel(dateStart)} onward`
+    : 'Any dates';
 
   const columns = isWide ? (width >= 1200 ? 3 : 2) : (width >= 620 ? 2 : 1);
   const cardWidth = columns === 1 ? '100%' : columns === 2 ? '48.5%' : '32%';
@@ -329,26 +528,19 @@ export default function ToursScreen({ initialSearch }: Props) {
           <TouchableOpacity
             style={sb.field}
             activeOpacity={0.8}
-            onPress={() => { setDateOpen((v) => !v); setTravelersOpen(false); }}
+            onPress={() => { setCalendarVisible(true); setTravelersOpen(false); }}
           >
-            <Text style={sb.fieldLabel}>WHAT DATE?</Text>
+            <Text style={sb.fieldLabel}>TRAVEL DATE</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <CalendarIcon />
-              <Text style={sb.fieldValue}>{dateWindow}</Text>
+              <Text style={sb.fieldValue} numberOfLines={1}>{dateFieldLabel}</Text>
             </View>
-            <FieldPopover visible={dateOpen}>
-              {DATE_WINDOWS.map((w) => (
-                <TouchableOpacity key={w.label} style={sb.popoverItem} onPress={() => { setDateWindow(w.label); setDateOpen(false); }}>
-                  <Text style={sb.popoverItemText}>{w.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </FieldPopover>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={sb.field}
             activeOpacity={0.8}
-            onPress={() => { setTravelersOpen((v) => !v); setDateOpen(false); }}
+            onPress={() => setTravelersOpen((v) => !v)}
           >
             <Text style={sb.fieldLabel}>TRAVELERS</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -368,7 +560,7 @@ export default function ToursScreen({ initialSearch }: Props) {
             </FieldPopover>
           </TouchableOpacity>
 
-          <TouchableOpacity style={sb.searchBtn} activeOpacity={0.85} onPress={() => { setDateOpen(false); setTravelersOpen(false); }}>
+          <TouchableOpacity style={sb.searchBtn} activeOpacity={0.85} onPress={() => { runSearch(); setTravelersOpen(false); }}>
             <SearchIcon />
             <Text style={sb.searchBtnText}>Search Tours</Text>
           </TouchableOpacity>
@@ -457,6 +649,14 @@ export default function ToursScreen({ initialSearch }: Props) {
         visible={!!bookingTour}
         onClose={() => setBookingTour(null)}
       />
+
+      <TravelDateCalendarModal
+        visible={calendarVisible}
+        onClose={() => setCalendarVisible(false)}
+        initialStart={dateStart}
+        initialEnd={dateEnd}
+        onApply={(start, end) => { setDateStart(start); setDateEnd(end); }}
+      />
     </View>
   );
 }
@@ -499,6 +699,50 @@ const sb = StyleSheet.create({
     flexGrow: 1, flexBasis: 140,
   },
   searchBtnText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
+});
+
+const cal = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(59,26,12,0.45)', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  card: {
+    width: '100%', maxWidth: 460, maxHeight: '86%',
+    backgroundColor: C.cardBg, borderRadius: 18, padding: 18,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } },
+      android: { elevation: 8 },
+    }),
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerTitle: { fontSize: 15, fontWeight: '900', color: C.brown },
+  closeX: { fontSize: 16, fontWeight: '800', color: C.brownMid },
+
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
+  navBtn: {
+    width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.lightBg, borderWidth: 1, borderColor: C.divider,
+  },
+  navBtnText: { fontSize: 16, fontWeight: '900', color: C.brown, marginTop: -2 },
+  navRangeText: { fontSize: 12, fontWeight: '800', color: C.brown },
+
+  monthsRow: { flexDirection: 'row', gap: 14, marginTop: 12 },
+
+  monthTitle: { fontSize: 11.5, fontWeight: '800', color: C.brown, textAlign: 'center', marginBottom: 6 },
+  weekRow: { flexDirection: 'row' },
+  weekLetter: { flex: 1, textAlign: 'center', fontSize: 9.5, fontWeight: '800', color: C.brownMid, opacity: 0.6 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  cell: { width: '14.28%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  rangeFill: { position: 'absolute', left: 0, right: 0, top: '12%', bottom: '12%', backgroundColor: C.amber + '26' },
+  dayBtn: { width: '80%', aspectRatio: 1, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  dayBtnActive: { backgroundColor: C.amber },
+  dayText: { fontSize: 10.5, fontWeight: '600', color: C.brown },
+  dayTextPast: { color: C.brownMid, opacity: 0.32 },
+  dayTextActive: { color: '#FFFFFF', fontWeight: '800' },
+
+  helperText: { fontSize: 10.5, color: C.brownMid, opacity: 0.75, lineHeight: 14, textAlign: 'center', marginTop: 14 },
+
+  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
+  clearText: { fontSize: 12, fontWeight: '800', color: C.amber },
+  applyBtn: { backgroundColor: C.brown, borderRadius: 12, paddingHorizontal: 26, paddingVertical: 11 },
+  applyBtnText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
 });
 
 const mf = StyleSheet.create({

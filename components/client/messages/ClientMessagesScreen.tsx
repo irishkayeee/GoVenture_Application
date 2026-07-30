@@ -1,30 +1,32 @@
 /**
  * ClientMessagesScreen.tsx
- * Client-side Messages tab. Wide screens (tablet/web) get a three-column
- * layout — conversation list, chat thread, tour info sidebar — matching the
- * desktop design. Narrower screens (phone) collapse to a single pane with
- * back navigation and the tour info opening as a bottom sheet.
+ * Client-side Messages tab — mobile navigation pattern only (no side-by-side
+ * desktop columns): a conversation list screen, a chat thread screen reached
+ * by tapping a conversation, and an "About This Tour" info panel reached
+ * from the chat header, shown as a bottom sheet.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, Modal,
-  StyleSheet, Platform, KeyboardAvoidingView, useWindowDimensions, ActivityIndicator,
+  StyleSheet, Platform, KeyboardAvoidingView, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C } from '../theme';
 import ClientPageHero from '../ClientPageHero';
-import { TourConversation, ChatMessage } from './mockData';
+import { TourConversation, ChatMessage, QUICK_REPLIES } from './mockData';
 import TourInfoPanel from './TourInfoPanel';
 import { useAuth } from '@/components/auth/AuthContext';
+import { useBookings } from '../bookings/BookingsContext';
 import {
   CLIENT_CONVERSATIONS_LIST_API_URL, CLIENT_SEND_MESSAGE_API_URL,
   CLIENT_MARK_CONVERSATION_READ_API_URL, CLIENT_END_CONVERSATION_API_URL,
+  CLIENT_ARCHIVE_CONVERSATION_API_URL, CLIENT_START_CONVERSATION_API_URL,
 } from '@/constants/api';
 
-const WIDE_BREAKPOINT = 900;
+type Filter = 'all' | 'unread' | 'archived';
 
 /* ── Icons ── */
 const SearchIcon = () => (
@@ -33,31 +35,42 @@ const SearchIcon = () => (
     <Path d="M21 21l-4.3-4.3" stroke={C.brownMid} strokeWidth={2} strokeLinecap="round" />
   </Svg>
 );
-
 const BackIcon = () => (
   <Svg width={19} height={19} viewBox="0 0 24 24" fill="none">
     <Path d="M15 19l-7-7 7-7" stroke={C.brown} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
-
-const DotsIcon = () => (
+const DotsIcon = ({ color = C.brownMid }: { color?: string }) => (
   <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-    <Circle cx={12} cy={5} r={1.6} fill={C.brownMid} />
-    <Circle cx={12} cy={12} r={1.6} fill={C.brownMid} />
-    <Circle cx={12} cy={19} r={1.6} fill={C.brownMid} />
+    <Circle cx={12} cy={5} r={1.6} fill={color} />
+    <Circle cx={12} cy={12} r={1.6} fill={color} />
+    <Circle cx={12} cy={19} r={1.6} fill={color} />
   </Svg>
 );
-
 const MicIcon = () => (
   <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
     <Path d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z" stroke={C.brownMid} strokeWidth={1.8} />
     <Path d="M5 11a7 7 0 0014 0M12 18v3" stroke={C.brownMid} strokeWidth={1.8} strokeLinecap="round" />
   </Svg>
 );
-
 const SendIcon = () => (
   <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
     <Path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+const PlusIcon = () => (
+  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+    <Path d="M12 5v14M5 12h14" stroke="#FFFFFF" strokeWidth={2.4} strokeLinecap="round" />
+  </Svg>
+);
+const ArchiveIcon = ({ color = C.brownMid }: { color?: string }) => (
+  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+    <Path d="M3 4h18v4H3V4zM5 8v11a1 1 0 001 1h12a1 1 0 001-1V8M10 12h4" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+const CloseIcon = () => (
+  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+    <Path d="M6 6l12 12M18 6L6 18" stroke={C.brownMid} strokeWidth={2.2} strokeLinecap="round" />
   </Svg>
 );
 
@@ -66,27 +79,51 @@ const formatDateLabel = (iso: string) => {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
+/* ── Unread count pill (used on nav badge + per-conversation) ── */
+export function UnreadBadge({ count, style }: { count: number; style?: object }) {
+  if (count <= 0) return null;
+  return (
+    <View style={[ub.badge, style]}>
+      <Text style={ub.badgeText}>{count > 99 ? '99+' : count}</Text>
+    </View>
+  );
+}
+const ub = StyleSheet.create({
+  badge: {
+    minWidth: 17, height: 17, borderRadius: 9, backgroundColor: C.danger,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+  },
+  badgeText: { fontSize: 9.5, fontWeight: '800', color: '#FFFFFF' },
+});
+
 /* ── Conversation list ── */
 function ConversationList({
-  conversations, activeId, search, setSearch, filter, setFilter, onSelect,
+  conversations, activeId, search, setSearch, filter, setFilter, onSelect, onNewConversation,
+  menuOpenId, setMenuOpenId, onToggleArchive,
 }: {
   conversations: TourConversation[];
   activeId: string | null;
   search: string;
   setSearch: (v: string) => void;
-  filter: 'all' | 'unread';
-  setFilter: (v: 'all' | 'unread') => void;
+  filter: Filter;
+  setFilter: (v: Filter) => void;
   onSelect: (id: string) => void;
+  onNewConversation: () => void;
+  menuOpenId: string | null;
+  setMenuOpenId: (id: string | null) => void;
+  onToggleArchive: (c: TourConversation) => void;
 }) {
   const filtered = conversations.filter((c) => {
-    if (filter === 'unread' && !c.unread) return false;
+    if (filter === 'archived') { if (!c.isArchived) return false; }
+    else if (c.isArchived) return false;
+    if (filter === 'unread' && c.unreadCount <= 0) return false;
     if (search.trim() && !c.destination.toLowerCase().includes(search.trim().toLowerCase())) return false;
     return true;
   });
-  const anyUnread = conversations.some((c) => c.unread);
+  const anyUnread = conversations.some((c) => !c.isArchived && c.unreadCount > 0);
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 8 }}>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 8 }} keyboardShouldPersistTaps="handled">
       <View style={l.searchRow}>
         <SearchIcon />
         <TextInput
@@ -98,18 +135,23 @@ function ConversationList({
         />
       </View>
 
+      <TouchableOpacity style={l.newConvoBtn} activeOpacity={0.85} onPress={onNewConversation}>
+        <PlusIcon />
+        <Text style={l.newConvoBtnText}>New Conversation</Text>
+      </TouchableOpacity>
+
       <View style={l.tabRow}>
-        <TouchableOpacity style={l.tabBtn} activeOpacity={0.75} onPress={() => setFilter('all')}>
-          <Text style={[l.tabLabel, filter === 'all' && l.tabLabelActive]}>All Messages</Text>
-          {filter === 'all' && <View style={l.tabUnderline} />}
-        </TouchableOpacity>
-        <TouchableOpacity style={l.tabBtn} activeOpacity={0.75} onPress={() => setFilter('unread')}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <Text style={[l.tabLabel, filter === 'unread' && l.tabLabelActive]}>Unread</Text>
-            {anyUnread && <View style={l.unreadDot} />}
-          </View>
-          {filter === 'unread' && <View style={l.tabUnderline} />}
-        </TouchableOpacity>
+        {(['all', 'unread', 'archived'] as Filter[]).map((f) => (
+          <TouchableOpacity key={f} style={l.tabBtn} activeOpacity={0.75} onPress={() => setFilter(f)}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Text style={[l.tabLabel, filter === f && l.tabLabelActive]}>
+                {f === 'all' ? 'All Messages' : f === 'unread' ? 'Unread' : 'Archived'}
+              </Text>
+              {f === 'unread' && anyUnread && <View style={l.unreadDot} />}
+            </View>
+            {filter === f && <View style={l.tabUnderline} />}
+          </TouchableOpacity>
+        ))}
       </View>
 
       {filtered.length === 0 ? (
@@ -137,8 +179,24 @@ function ConversationList({
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 6 }}>
                   <Text style={l.rowTime}>{c.timeAgo}</Text>
-                  {c.unread && <View style={l.unreadDot} />}
+                  <UnreadBadge count={c.unreadCount} />
                 </View>
+                <TouchableOpacity
+                  style={l.menuBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={(e) => { e.stopPropagation?.(); setMenuOpenId(menuOpenId === c.id ? null : c.id); }}
+                >
+                  <DotsIcon />
+                </TouchableOpacity>
+
+                {menuOpenId === c.id && (
+                  <View style={l.menuSheet}>
+                    <TouchableOpacity style={l.menuRow} activeOpacity={0.75} onPress={() => { onToggleArchive(c); setMenuOpenId(null); }}>
+                      <ArchiveIcon />
+                      <Text style={l.menuRowText}>{c.isArchived ? 'Unarchive' : 'Archive'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })}
@@ -172,21 +230,20 @@ function Bubble({ msg }: { msg: ChatMessage }) {
 
 /* ── Chat thread + input ── */
 function ChatPanel({
-  conversation, onBack, onInfo, showBack, onSend,
+  conversation, onBack, onInfo, onSend,
 }: {
   conversation: TourConversation;
-  onBack?: () => void;
+  onBack: () => void;
   onInfo: () => void;
-  showBack: boolean;
   onSend: (text: string) => void;
 }) {
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
-  const handleSend = () => {
-    const text = draft.trim();
-    if (!text) return;
-    onSend(text);
+  const send = (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    onSend(t);
     setDraft('');
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   };
@@ -196,17 +253,15 @@ function ChatPanel({
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
       <View style={cp.header}>
-        {showBack && (
-          <TouchableOpacity style={cp.backBtn} onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <BackIcon />
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={cp.backBtn} onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <BackIcon />
+        </TouchableOpacity>
         <View style={cp.headerAvatar}>
           <Text style={{ fontSize: 18 }}>{conversation.emoji}</Text>
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={cp.headerTitle} numberOfLines={1}>{conversation.destination}</Text>
-          <Text style={cp.headerSub} numberOfLines={1}>Booking ID: {conversation.bookingId}</Text>
+          <Text style={cp.headerSub} numberOfLines={1}>Booking ID: {conversation.bookingId || '—'}</Text>
         </View>
         <TouchableOpacity style={cp.dotsBtn} onPress={onInfo} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <DotsIcon />
@@ -243,24 +298,101 @@ function ChatPanel({
           <Text style={cp.endedBarText}>This conversation has ended.</Text>
         </View>
       ) : (
-        <View style={cp.inputRow}>
-          <View style={cp.micBtn}>
-            <MicIcon />
+        <>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={cp.quickRepliesRow} contentContainerStyle={{ gap: 8, paddingHorizontal: 14 }}>
+            {QUICK_REPLIES.map((label) => (
+              <TouchableOpacity key={label} style={cp.quickReplyChip} activeOpacity={0.75} onPress={() => send(label)}>
+                <Text style={cp.quickReplyText}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={cp.inputRow}>
+            <View style={cp.micBtn}>
+              <MicIcon />
+            </View>
+            <TextInput
+              style={cp.input}
+              placeholder="Type a message..."
+              placeholderTextColor={C.brownMid + '80'}
+              value={draft}
+              onChangeText={setDraft}
+              multiline
+            />
+            <TouchableOpacity style={cp.sendBtn} activeOpacity={0.85} onPress={() => send(draft)}>
+              <SendIcon />
+            </TouchableOpacity>
           </View>
-          <TextInput
-            style={cp.input}
-            placeholder="Type a message..."
-            placeholderTextColor={C.brownMid + '80'}
-            value={draft}
-            onChangeText={setDraft}
-            multiline
-          />
-          <TouchableOpacity style={cp.sendBtn} activeOpacity={0.85} onPress={handleSend}>
-            <SendIcon />
-          </TouchableOpacity>
-        </View>
+        </>
       )}
     </KeyboardAvoidingView>
+  );
+}
+
+/* ── New Conversation modal ── */
+function NewConversationModal({
+  visible, onClose, onCreate,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onCreate: (bookingId: string, text: string) => Promise<void>;
+}) {
+  const { bookings } = useBookings();
+  const [bookingId, setBookingId] = useState('');
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleClose = () => { setBookingId(''); setText(''); onClose(); };
+
+  const handleCreate = async () => {
+    if (!text.trim()) return;
+    setSubmitting(true);
+    try {
+      await onCreate(bookingId, text.trim());
+      handleClose();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
+      <View style={nc.overlay}>
+        <View style={nc.card}>
+          <View style={nc.headerRow}>
+            <Text style={nc.title}>New Conversation</Text>
+            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><CloseIcon /></TouchableOpacity>
+          </View>
+
+          <Text style={nc.label}>RELATED BOOKING (OPTIONAL)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            <TouchableOpacity style={[nc.chip, bookingId === '' && nc.chipActive]} activeOpacity={0.8} onPress={() => setBookingId('')}>
+              <Text style={[nc.chipText, bookingId === '' && nc.chipTextActive]}>General Inquiry</Text>
+            </TouchableOpacity>
+            {bookings.map((b) => (
+              <TouchableOpacity key={b.id} style={[nc.chip, bookingId === b.id && nc.chipActive]} activeOpacity={0.8} onPress={() => setBookingId(b.id)}>
+                <Text style={[nc.chipText, bookingId === b.id && nc.chipTextActive]} numberOfLines={1}>{b.destination}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <Text style={[nc.label, { marginTop: 14 }]}>MESSAGE</Text>
+          <TextInput
+            style={nc.textarea}
+            placeholder="How can we help you?"
+            placeholderTextColor={C.brownMid + '80'}
+            value={text}
+            onChangeText={setText}
+            multiline
+            numberOfLines={4}
+          />
+
+          <TouchableOpacity style={[nc.sendBtn, (!text.trim() || submitting) && { opacity: 0.6 }]} activeOpacity={0.85} onPress={handleCreate} disabled={!text.trim() || submitting}>
+            {submitting ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={nc.sendBtnText}>Start Conversation</Text>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -289,9 +421,9 @@ function ConfirmEndModal({ visible, onCancel, onConfirm }: { visible: boolean; o
 }
 
 /* ── Main screen ── */
-export default function ClientMessagesScreen() {
-  const { width } = useWindowDimensions();
-  const isWide = width >= WIDE_BREAKPOINT;
+type Props = { onNavigate: (tab: 'bookings' | 'documents') => void };
+
+export default function ClientMessagesScreen({ onNavigate }: Props) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
@@ -301,9 +433,11 @@ export default function ClientMessagesScreen() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [filter, setFilter] = useState<Filter>('all');
   const [infoVisible, setInfoVisible] = useState(false);
   const [endConfirmVisible, setEndConfirmVisible] = useState(false);
+  const [newConvoVisible, setNewConvoVisible] = useState(false);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   const loadConversations = useCallback(() => {
     if (!user) return;
@@ -315,7 +449,6 @@ export default function ClientMessagesScreen() {
         if (result.status !== 'success') throw new Error(result.message || 'Failed to load messages.');
         const data = result.data as TourConversation[];
         setConversations(data);
-        setActiveId((prev) => prev ?? data[0]?.id ?? null);
       })
       .catch((e) => setError(e.message || 'Failed to load messages.'))
       .finally(() => setLoading(false));
@@ -326,9 +459,10 @@ export default function ClientMessagesScreen() {
   const active = useMemo(() => conversations.find((c) => c.id === activeId) ?? null, [conversations, activeId]);
 
   const openConversation = (id: string) => {
-    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unread: false } : c)));
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)));
     setActiveId(id);
     setMobileView('chat');
+    setMenuOpenId(null);
     if (user) {
       fetch(CLIENT_MARK_CONVERSATION_READ_API_URL, {
         method: 'POST',
@@ -373,6 +507,41 @@ export default function ClientMessagesScreen() {
     }
   };
 
+  const handleToggleArchive = async (c: TourConversation) => {
+    if (!user) return;
+    const nextArchived = !c.isArchived;
+    setConversations((prev) => prev.map((x) => (x.id === c.id ? { ...x, isArchived: nextArchived } : x)));
+    try {
+      await fetch(CLIENT_ARCHIVE_CONVERSATION_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, conversationId: c.id, archived: nextArchived }),
+      });
+    } catch {
+      // Local state already updated optimistically.
+    }
+  };
+
+  const handleCreateConversation = async (bookingId: string, text: string) => {
+    if (!user) return;
+    const res = await fetch(CLIENT_START_CONVERSATION_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id, bookingId, text }),
+    });
+    const result = await res.json();
+    if (result.status !== 'success') return;
+    loadConversations();
+    setActiveId(result.data.conversationId);
+    setMobileView('chat');
+  };
+
+  const handleContactAgent = () => {
+    if (!active) return;
+    handleSend("I'd like to speak with an agent about this booking, please.");
+    setInfoVisible(false);
+  };
+
   if (loading) {
     return (
       <View style={{ flex: 1 }}>
@@ -398,65 +567,6 @@ export default function ClientMessagesScreen() {
     );
   }
 
-  if (conversations.length === 0) {
-    return (
-      <View style={{ flex: 1 }}>
-        <ClientPageHero icon="✉️" title="Messages" subtitle="Communicate with our team about your inquiries." />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 }}>
-          <Text style={{ fontSize: 40 }}>✉️</Text>
-          <Text style={{ fontSize: 15, fontWeight: '900', color: C.brown }}>No messages yet</Text>
-          <Text style={{ fontSize: 12, color: C.brownMid, textAlign: 'center' }}>
-            Once you book a tour, you can chat with the GoVenture team here.
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  /* ── Wide layout: three columns ── */
-  if (isWide) {
-    return (
-      <View style={{ flex: 1 }}>
-      <ClientPageHero icon="✉️" title="Messages" subtitle="Communicate with our team about your inquiries." />
-      <View style={{ flex: 1, flexDirection: 'row' }}>
-        <View style={s.listCol}>
-          <ConversationList
-            conversations={conversations}
-            activeId={activeId}
-            search={search} setSearch={setSearch}
-            filter={filter} setFilter={setFilter}
-            onSelect={openConversation}
-          />
-        </View>
-
-        <View style={{ flex: 1 }}>
-          {active ? (
-            <ChatPanel
-              conversation={active}
-              showBack={false}
-              onInfo={() => setInfoVisible((v) => !v)}
-              onSend={handleSend}
-            />
-          ) : (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: C.brownMid }}>Select a conversation</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={s.infoCol}>
-          <ScrollView>
-            {active && <TourInfoPanel conversation={active} onEndConversation={() => setEndConfirmVisible(true)} />}
-          </ScrollView>
-        </View>
-
-        <ConfirmEndModal visible={endConfirmVisible} onCancel={() => setEndConfirmVisible(false)} onConfirm={handleEndConversation} />
-      </View>
-      </View>
-    );
-  }
-
-  /* ── Compact layout: single pane + info sheet ── */
   return (
     <View style={{ flex: 1 }}>
       {mobileView === 'list' || !active ? (
@@ -468,12 +578,14 @@ export default function ClientMessagesScreen() {
             search={search} setSearch={setSearch}
             filter={filter} setFilter={setFilter}
             onSelect={openConversation}
+            onNewConversation={() => setNewConvoVisible(true)}
+            menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId}
+            onToggleArchive={handleToggleArchive}
           />
         </>
       ) : (
         <ChatPanel
           conversation={active}
-          showBack
           onBack={() => setMobileView('list')}
           onInfo={() => setInfoVisible(true)}
           onSend={handleSend}
@@ -495,6 +607,9 @@ export default function ClientMessagesScreen() {
                 <TourInfoPanel
                   conversation={active}
                   onEndConversation={() => { setInfoVisible(false); setEndConfirmVisible(true); }}
+                  onContactAgent={handleContactAgent}
+                  onViewBookingDetails={() => { setInfoVisible(false); onNavigate('bookings'); }}
+                  onViewDocuments={() => { setInfoVisible(false); onNavigate('documents'); }}
                 />
               )}
             </ScrollView>
@@ -503,16 +618,12 @@ export default function ClientMessagesScreen() {
       </Modal>
 
       <ConfirmEndModal visible={endConfirmVisible} onCancel={() => setEndConfirmVisible(false)} onConfirm={handleEndConversation} />
+      <NewConversationModal visible={newConvoVisible} onClose={() => setNewConvoVisible(false)} onCreate={handleCreateConversation} />
     </View>
   );
 }
 
 /* ── Styles ── */
-const s = StyleSheet.create({
-  listCol: { width: 300, borderRightWidth: 1, borderRightColor: C.divider, backgroundColor: C.cardBg },
-  infoCol: { width: 320, borderLeftWidth: 1, borderLeftColor: C.divider, backgroundColor: C.cardBg },
-});
-
 const l = StyleSheet.create({
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -521,6 +632,12 @@ const l = StyleSheet.create({
     marginHorizontal: 16, marginTop: 14,
   },
   searchInput: { flex: 1, fontSize: 13, color: C.brown, padding: 0 },
+
+  newConvoBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: C.brown, borderRadius: 12, marginHorizontal: 16, marginTop: 12, paddingVertical: 12,
+  },
+  newConvoBtnText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
 
   tabRow: { flexDirection: 'row', gap: 20, marginHorizontal: 16, marginTop: 16, borderBottomWidth: 1, borderBottomColor: C.divider },
   tabBtn: { paddingBottom: 10 },
@@ -537,6 +654,7 @@ const l = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 16, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: C.divider,
+    position: 'relative',
   },
   rowActive: { backgroundColor: C.lightBg },
   avatar: {
@@ -547,6 +665,18 @@ const l = StyleSheet.create({
   rowTeam: { fontSize: 10.5, fontWeight: '700', color: C.amber, marginTop: 1 },
   rowPreview: { fontSize: 11.5, color: C.brownMid, opacity: 0.75, marginTop: 2 },
   rowTime: { fontSize: 10, color: C.brownMid, opacity: 0.6, fontWeight: '600' },
+  menuBtn: { padding: 4, marginLeft: 2 },
+  menuSheet: {
+    position: 'absolute', top: 40, right: 16, zIndex: 10,
+    backgroundColor: C.cardBg, borderRadius: 10, borderWidth: 1, borderColor: C.divider,
+    paddingVertical: 4, minWidth: 130,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+      android: { elevation: 6 },
+    }),
+  },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10 },
+  menuRowText: { fontSize: 12, fontWeight: '700', color: C.brown },
 });
 
 const b = StyleSheet.create({
@@ -593,6 +723,13 @@ const cp = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: C.divider, backgroundColor: C.lightBg,
   },
   endedBarText: { fontSize: 12, color: C.brownMid, textAlign: 'center', fontStyle: 'italic' },
+
+  quickRepliesRow: { flexGrow: 0, backgroundColor: C.cardBg, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.divider },
+  quickReplyChip: {
+    borderWidth: 1, borderColor: C.divider, backgroundColor: C.lightBg,
+    borderRadius: 20, paddingHorizontal: 13, paddingVertical: 8,
+  },
+  quickReplyText: { fontSize: 11, fontWeight: '700', color: C.brown },
 
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
@@ -656,4 +793,28 @@ const m = StyleSheet.create({
     borderRadius: 12, paddingVertical: 12, backgroundColor: C.danger,
   },
   confirmText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
+});
+
+const nc = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(59,26,12,0.45)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  card: {
+    width: '100%', maxWidth: 420, backgroundColor: C.cardBg, borderRadius: 18, padding: 20,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } },
+      android: { elevation: 8 },
+    }),
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title: { fontSize: 15.5, fontWeight: '900', color: C.brown },
+  label: { fontSize: 9.5, fontWeight: '800', color: C.brownMid, opacity: 0.65, letterSpacing: 0.4, marginBottom: 8 },
+  chip: { borderWidth: 1, borderColor: C.divider, backgroundColor: C.lightBg, borderRadius: 20, paddingHorizontal: 13, paddingVertical: 8, maxWidth: 160 },
+  chipActive: { backgroundColor: C.amber, borderColor: C.amber },
+  chipText: { fontSize: 11.5, fontWeight: '700', color: C.brown },
+  chipTextActive: { color: '#FFFFFF' },
+  textarea: {
+    backgroundColor: C.lightBg, borderRadius: 12, borderWidth: 1, borderColor: C.divider,
+    paddingHorizontal: 13, paddingVertical: 11, fontSize: 13, color: C.brown, textAlignVertical: 'top', minHeight: 90,
+  },
+  sendBtn: { marginTop: 16, backgroundColor: C.amber, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingVertical: 13 },
+  sendBtnText: { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
 });

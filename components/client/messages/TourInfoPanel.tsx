@@ -1,8 +1,8 @@
 /**
  * TourInfoPanel.tsx
- * "About This Tour" summary — banner, trip facts, booking info cards, and
- * the End Conversation action. Reused both as a fixed sidebar (wide layout)
- * and inside a bottom-sheet modal (compact layout).
+ * "About This Tour" summary — banner, trip facts, booking info cards, a
+ * Need Help? quick-actions section, and the End Conversation action.
+ * Rendered inside the Screen 3 bottom sheet on mobile.
  */
 
 import React from 'react';
@@ -38,55 +38,126 @@ const CloseCircleIcon = () => (
   </Svg>
 );
 
+const AgentIcon = () => (
+  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+    <Circle cx={12} cy={8} r={3.4} stroke={C.brown} strokeWidth={1.8} />
+    <Path d="M5 20c0-3.6 3.1-6.5 7-6.5s7 2.9 7 6.5" stroke={C.brown} strokeWidth={1.8} strokeLinecap="round" />
+  </Svg>
+);
+const BookingIcon = () => (
+  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+    <Path d="M5 4h14v16l-7-3.5L5 20V4z" stroke={C.brown} strokeWidth={1.8} strokeLinejoin="round" />
+  </Svg>
+);
+const DocsIcon = () => (
+  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+    <Path d="M7 3h8l4 4v14H7V3z" stroke={C.brown} strokeWidth={1.8} strokeLinejoin="round" />
+    <Path d="M9 12h6M9 16h6" stroke={C.brown} strokeWidth={1.8} strokeLinecap="round" />
+  </Svg>
+);
+const ChevronRightIcon = () => (
+  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+    <Path d="M9 5l7 7-7 7" stroke={C.brownMid} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
 type Props = {
   conversation: TourConversation;
   onEndConversation: () => void;
+  onContactAgent: () => void;
+  onViewBookingDetails: () => void;
+  onViewDocuments: () => void;
 };
 
-export default function TourInfoPanel({ conversation, onEndConversation }: Props) {
+export default function TourInfoPanel({
+  conversation, onEndConversation, onContactAgent, onViewBookingDetails, onViewDocuments,
+}: Props) {
+  const hasBooking = !!conversation.bookingId;
+
   return (
     <View style={p.wrap}>
-      <Text style={p.title}>About This Tour</Text>
-
       <View style={p.banner}>
         <Text style={p.bannerEmoji}>{conversation.emoji}</Text>
       </View>
 
       <Text style={p.destination}>{conversation.destination}</Text>
 
-      <View style={p.factRow}>
-        <PinIcon />
-        <Text style={p.factText}>{conversation.location}</Text>
-      </View>
-      <View style={p.factRow}>
-        <CalendarIcon />
-        <Text style={p.factText}>{conversation.travelDates}</Text>
-      </View>
-      <View style={p.factRow}>
-        <PersonIcon />
-        <Text style={p.factText}>{conversation.guestLabel}</Text>
-      </View>
+      {hasBooking ? (
+        <>
+          <View style={p.factRow}>
+            <PinIcon />
+            <Text style={p.factText}>{conversation.location || '—'}</Text>
+          </View>
+          <View style={p.factRow}>
+            <CalendarIcon />
+            <Text style={p.factText}>{conversation.travelDates || '—'}</Text>
+          </View>
+          <View style={p.factRow}>
+            <PersonIcon />
+            <Text style={p.factText}>{conversation.guestLabel || '—'}</Text>
+          </View>
+
+          <View style={p.divider} />
+
+          <Text style={p.sectionLabel}>Booking Information</Text>
+
+          <View style={p.infoCard}>
+            <Text style={p.infoLabel}>Booking ID:</Text>
+            <Text style={p.infoValue}>{conversation.bookingId}</Text>
+          </View>
+
+          <View style={p.infoCard}>
+            <Text style={p.infoLabel}>Booking Status:</Text>
+            <View style={[p.statusPill, statusPillColor(conversation.bookingStatus)]}>
+              <Text style={p.statusPillText}>{conversation.bookingStatus || '—'}</Text>
+            </View>
+          </View>
+
+          <View style={p.infoCard}>
+            <Text style={p.infoLabel}>Total Amount:</Text>
+            <Text style={p.infoValue}>{conversation.totalAmount || '—'}</Text>
+          </View>
+        </>
+      ) : (
+        <View style={p.generalNote}>
+          <Text style={p.generalNoteText}>
+            This is a general inquiry not linked to a specific booking.
+          </Text>
+        </View>
+      )}
 
       <View style={p.divider} />
 
-      <Text style={p.sectionLabel}>Booking Information</Text>
+      <Text style={p.sectionLabel}>Need Help?</Text>
 
-      <View style={p.infoCard}>
-        <Text style={p.infoLabel}>Booking ID:</Text>
-        <Text style={p.infoValue}>{conversation.bookingId}</Text>
-      </View>
-
-      <View style={p.infoCard}>
-        <Text style={p.infoLabel}>Booking Status:</Text>
-        <View style={[p.statusPill, statusPillColor(conversation.bookingStatus)]}>
-          <Text style={p.statusPillText}>{conversation.bookingStatus}</Text>
+      <TouchableOpacity style={p.helpRow} activeOpacity={0.8} onPress={onContactAgent}>
+        <View style={p.helpIconWrap}><AgentIcon /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={p.helpRowTitle}>Contact Agent</Text>
+          <Text style={p.helpRowSub}>Send a request to speak with our team</Text>
         </View>
-      </View>
+        <ChevronRightIcon />
+      </TouchableOpacity>
 
-      <View style={p.infoCard}>
-        <Text style={p.infoLabel}>Total Amount:</Text>
-        <Text style={p.infoValue}>{conversation.totalAmount}</Text>
-      </View>
+      {hasBooking && (
+        <TouchableOpacity style={p.helpRow} activeOpacity={0.8} onPress={onViewBookingDetails}>
+          <View style={p.helpIconWrap}><BookingIcon /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={p.helpRowTitle}>Booking Details</Text>
+            <Text style={p.helpRowSub}>View your full booking information</Text>
+          </View>
+          <ChevronRightIcon />
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity style={p.helpRow} activeOpacity={0.8} onPress={onViewDocuments}>
+        <View style={p.helpIconWrap}><DocsIcon /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={p.helpRowTitle}>Documents</Text>
+          <Text style={p.helpRowSub}>View or upload your travel documents</Text>
+        </View>
+        <ChevronRightIcon />
+      </TouchableOpacity>
 
       {!conversation.ended ? (
         <TouchableOpacity style={p.endBtn} activeOpacity={0.85} onPress={onEndConversation}>
@@ -116,7 +187,6 @@ function statusPillColor(status: TourConversation['bookingStatus']) {
 
 const p = StyleSheet.create({
   wrap: { padding: 16 },
-  title: { fontSize: 13, fontWeight: '900', color: C.brown, marginBottom: 12 },
 
   banner: {
     height: 110, borderRadius: 14, marginBottom: 12,
@@ -128,6 +198,12 @@ const p = StyleSheet.create({
 
   factRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   factText: { fontSize: 12, color: C.brownMid, flexShrink: 1 },
+
+  generalNote: {
+    borderRadius: 12, borderWidth: 1, borderColor: C.divider, backgroundColor: C.lightBg,
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 4,
+  },
+  generalNoteText: { fontSize: 12, color: C.brownMid, lineHeight: 17 },
 
   divider: { height: 1, backgroundColor: C.divider, marginVertical: 14 },
 
@@ -145,6 +221,21 @@ const p = StyleSheet.create({
 
   statusPill: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
   statusPillText: { fontSize: 10.5, fontWeight: '800', color: '#FFFFFF' },
+
+  helpRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: C.lightBg, borderRadius: 12,
+    borderWidth: 1, borderColor: C.divider,
+    paddingHorizontal: 12, paddingVertical: 11,
+    marginBottom: 8,
+  },
+  helpIconWrap: {
+    width: 32, height: 32, borderRadius: 16, flexShrink: 0,
+    backgroundColor: C.cardBg, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: C.divider,
+  },
+  helpRowTitle: { fontSize: 12.5, fontWeight: '800', color: C.brown },
+  helpRowSub: { fontSize: 10.5, color: C.brownMid, opacity: 0.75, marginTop: 1 },
 
   endBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10,

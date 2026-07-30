@@ -72,6 +72,7 @@ export default function LoginForm({ onSwitchToSignUp, onSuccess }: LoginFormProp
         fullName:  result.data.full_name,
         email:     result.data.email,
         role:      result.data.role,
+        avatarUrl: result.data.avatar_url ?? null,
       });
 
       // Close the modal first, then navigate

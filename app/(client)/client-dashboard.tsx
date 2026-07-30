@@ -13,14 +13,12 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import WelcomeModal from '@/components/WelcomeModal';
 import Copyright from '@/components/Copyright';
 import ClientMessagesScreen from '@/components/client/messages/ClientMessagesScreen';
 import ClientDashboardHome from '@/components/client/dashboard/ClientDashboardHome';
 import ToursScreen from '@/components/client/tours/ToursScreen';
-import PlanTripScreen from '@/components/client/plan/PlanTripScreen';
 import MyBookingsScreen from '@/components/client/bookings/MyBookingsScreen';
 import { BookingsProvider } from '@/components/client/bookings/BookingsContext';
 import { FavoritesProvider } from '@/components/client/tours/FavoritesContext';
@@ -32,7 +30,8 @@ import ClientSidebar, { SIDEBAR_W } from '@/components/client/ClientSidebar';
 import LogoutConfirmModal from '@/components/client/LogoutConfirmModal';
 import { BOTTOM_NAV_TABS, TAB_META, TabKey } from '@/components/client/navConfig';
 import { useAuth } from '@/components/auth/AuthContext';
-import { NOTIFICATIONS_UNREAD_COUNT_API_URL } from '@/constants/api';
+import { NOTIFICATIONS_UNREAD_COUNT_API_URL, CLIENT_CONVERSATIONS_LIST_API_URL } from '@/constants/api';
+import { TourConversation } from '@/components/client/messages/mockData';
 
 /* ── Color System (matches landing/admin) ── */
 const C = {
@@ -45,12 +44,6 @@ const C = {
   lightBg:  '#FDF0E6',
   divider:  '#E8C4A0',
 };
-
-const PlaneIcon = ({ color = '#FFFFFF' }: { color?: string }) => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-    <Path d="M2 16l7-2 3.5-7.5c.3-.6 1.2-.6 1.5 0L14 8l6.5-2c1-.3 2 .6 1.6 1.6l-2 6.5-2 3.5c-.2.4-.9.4-1 0l-1.5-3.5-7 3-4.5-.6c-.4 0-.6-.5-.3-.8L6 13" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
 
 const PlaceholderTab = ({ tab }: { tab: Exclude<TabKey, 'dashboard' | 'account'> }) => {
   const meta = TAB_META[tab];
@@ -65,10 +58,18 @@ const PlaceholderTab = ({ tab }: { tab: Exclude<TabKey, 'dashboard' | 'account'>
   );
 };
 
-const BottomNav = ({ active, onSelect, insetBottom }: { active: TabKey; onSelect: (key: TabKey) => void; insetBottom: number }) => (
+const BottomNav = ({
+  active, onSelect, insetBottom, badges,
+}: {
+  active: TabKey;
+  onSelect: (key: TabKey) => void;
+  insetBottom: number;
+  badges?: Partial<Record<TabKey, number>>;
+}) => (
   <View style={[bn.wrapper, { paddingBottom: 8 + insetBottom }]}>
     {BOTTOM_NAV_TABS.map((item) => {
       const isActive = active === item.key;
+      const badgeCount = badges?.[item.key] ?? 0;
       return (
         <TouchableOpacity
           key={item.key}
@@ -76,7 +77,14 @@ const BottomNav = ({ active, onSelect, insetBottom }: { active: TabKey; onSelect
           activeOpacity={0.75}
           onPress={() => onSelect(item.key)}
         >
-          <item.Icon color={isActive ? C.amber : C.brownMid} />
+          <View>
+            <item.Icon color={isActive ? C.amber : C.brownMid} />
+            {badgeCount > 0 && (
+              <View style={bn.badge}>
+                <Text style={bn.badgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text>
+              </View>
+            )}
+          </View>
           <Text style={[bn.label, isActive && bn.labelActive]} numberOfLines={1}>
             {item.label}
           </Text>
@@ -95,6 +103,8 @@ export default function ClientDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [documentsBookingId, setDocumentsBookingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -106,6 +116,25 @@ export default function ClientDashboard() {
     };
     fetchUnread();
     const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [user, activeTab]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchUnreadMessages = () => {
+      fetch(`${CLIENT_CONVERSATIONS_LIST_API_URL}&userId=${user.id}`)
+        .then((res) => res.json())
+        .then((result) => {
+          if (result.status !== 'success') return;
+          const total = (result.data as TourConversation[])
+            .filter((c) => !c.isArchived)
+            .reduce((sum, c) => sum + c.unreadCount, 0);
+          setUnreadMessages(total);
+        })
+        .catch(() => {});
+    };
+    fetchUnreadMessages();
+    const interval = setInterval(fetchUnreadMessages, 15000);
     return () => clearInterval(interval);
   }, [user, activeTab]);
 
@@ -156,31 +185,33 @@ export default function ClientDashboard() {
             <ClientDashboardHome name={user?.fullName} onNavigate={setActiveTab} />
           ) : activeTab === 'tours' ? (
             <ToursScreen />
-          ) : activeTab === 'plan' ? (
-            <PlanTripScreen />
           ) : activeTab === 'bookings' ? (
-            <MyBookingsScreen onBrowseTours={() => setActiveTab('tours')} />
+            <MyBookingsScreen
+              onBrowseTours={() => setActiveTab('tours')}
+              onViewDocuments={(bookingId) => { setDocumentsBookingId(bookingId); setActiveTab('documents'); }}
+            />
           ) : activeTab === 'documents' ? (
-            <DocumentsScreen />
+            <DocumentsScreen
+              initialBookingId={documentsBookingId}
+              onConsumedInitialBooking={() => setDocumentsBookingId(null)}
+            />
           ) : activeTab === 'messages' ? (
-            <ClientMessagesScreen />
+            <ClientMessagesScreen onNavigate={setActiveTab} />
           ) : activeTab === 'notifications' ? (
             <ClientNotificationsScreen onNavigate={setActiveTab} />
           ) : activeTab === 'account' ? (
-            <AccountScreen name={user?.fullName} email={user?.email} onLogout={handleLogout} />
+            <AccountScreen name={user?.fullName} email={user?.email} />
           ) : (
             <PlaceholderTab tab={activeTab} />
           )}
-
-          {activeTab !== 'plan' && (
-            <TouchableOpacity style={fab.btn} activeOpacity={0.85} onPress={() => setActiveTab('plan')}>
-              <PlaneIcon />
-              <View style={fab.dot} />
-            </TouchableOpacity>
-          )}
         </View>
 
-        <BottomNav active={activeTab} onSelect={setActiveTab} insetBottom={insets.bottom} />
+        <BottomNav
+          active={activeTab}
+          onSelect={setActiveTab}
+          insetBottom={insets.bottom}
+          badges={{ messages: unreadMessages }}
+        />
 
         {sidebarOpen && (
           <>
@@ -245,21 +276,11 @@ const bn = StyleSheet.create({
   item:  { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingHorizontal: 2 },
   label: { fontSize: 8.5, fontWeight: '700', color: C.brownMid },
   labelActive: { color: C.amber, fontWeight: '800' },
-});
-
-const fab = StyleSheet.create({
-  btn: {
-    position: 'absolute', bottom: 20, right: 16,
-    width: 54, height: 54, borderRadius: 27,
-    backgroundColor: C.amber, alignItems: 'center', justifyContent: 'center',
-    ...Platform.select({
-      ios:     { shadowColor: C.amber, shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
-      android: { elevation: 6 },
-    }),
+  badge: {
+    position: 'absolute', top: -4, right: -8,
+    minWidth: 15, height: 15, borderRadius: 8, backgroundColor: '#F44336',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+    borderWidth: 1.5, borderColor: C.cardBg,
   },
-  dot: {
-    position: 'absolute', top: 2, right: 2,
-    width: 10, height: 10, borderRadius: 5, backgroundColor: '#2FBF9F',
-    borderWidth: 2, borderColor: C.amber,
-  },
+  badgeText: { fontSize: 8, fontWeight: '800', color: '#FFFFFF' },
 });

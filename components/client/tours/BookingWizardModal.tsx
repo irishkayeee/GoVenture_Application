@@ -8,7 +8,7 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  Modal, View, Text, TextInput, TouchableOpacity, ScrollView, Share,
+  Modal, View, Text, TextInput, TouchableOpacity, ScrollView, Alert,
   StyleSheet, Platform, useWindowDimensions, KeyboardAvoidingView, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +16,7 @@ import Svg, { Path, Rect } from 'react-native-svg';
 import { C } from '../theme';
 import { Tour, DepartureOption, SERVICE_FEE } from './mockData';
 import { useBookings } from '../bookings/BookingsContext';
+import { downloadReceiptPdf } from './downloadReceipt';
 
 const WIDE_BREAKPOINT = 760;
 
@@ -85,7 +86,7 @@ type Props = {
 };
 
 function Stepper({ step }: { step: Step }) {
-  const labels = ['Customer Information', 'Payment Details', 'Confirmation'] as const;
+  const labels = ['Customer', 'Payment', 'Confirmation'] as const;
   return (
     <View style={wz.stepperRow}>
       {labels.map((label, i) => {
@@ -94,9 +95,9 @@ function Stepper({ step }: { step: Step }) {
         const isDone = step > n;
         return (
           <React.Fragment key={label}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={wz.stepItem}>
               <View style={[wz.stepDot, isActive && wz.stepDotActive, isDone && wz.stepDotDone]}>
-                {isDone ? <CheckIcon size={13} /> : <Text style={[wz.stepDotText, isActive && wz.stepDotTextActive]}>{n}</Text>}
+                {isDone ? <CheckIcon size={12} /> : <Text style={[wz.stepDotText, isActive && wz.stepDotTextActive]}>{n}</Text>}
               </View>
               <Text style={[wz.stepLabel, isActive && wz.stepLabelActive]} numberOfLines={1}>{label}</Text>
             </View>
@@ -108,16 +109,35 @@ function Stepper({ step }: { step: Step }) {
   );
 }
 
-function CountStepper({ label, value, onChange, min = 0 }: { label: string; value: number; onChange: (v: number) => void; min?: number }) {
+function CountStepper({ label, value, onChange, min = 0, max = 20 }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number }) {
+  const [text, setText] = useState(String(value));
+
+  useEffect(() => { setText(String(value)); }, [value]);
+
+  const handleChangeText = (raw: string) => {
+    const digits = raw.replace(/[^0-9]/g, '');
+    setText(digits);
+    if (digits === '') { onChange(min); return; }
+    onChange(Math.max(min, Math.min(max, parseInt(digits, 10))));
+  };
+
   return (
-    <View style={{ flex: 1, minWidth: 120 }}>
+    <View style={fm.counterItem}>
       <Text style={fm.label}>{label}</Text>
       <View style={fm.stepperRow}>
         <TouchableOpacity style={fm.stepperBtn} activeOpacity={0.8} onPress={() => onChange(Math.max(min, value - 1))}>
           <Text style={fm.stepperBtnText}>−</Text>
         </TouchableOpacity>
-        <Text style={fm.stepperValue}>{value}</Text>
-        <TouchableOpacity style={fm.stepperBtn} activeOpacity={0.8} onPress={() => onChange(Math.min(10, value + 1))}>
+        <TextInput
+          style={fm.stepperInput}
+          value={text}
+          onChangeText={handleChangeText}
+          onBlur={() => setText(String(value))}
+          keyboardType="number-pad"
+          maxLength={2}
+          selectTextOnFocus
+        />
+        <TouchableOpacity style={fm.stepperBtn} activeOpacity={0.8} onPress={() => onChange(Math.min(max, value + 1))}>
           <Text style={fm.stepperBtnText}>+</Text>
         </TouchableOpacity>
       </View>
@@ -138,7 +158,7 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
   const [contact, setContact] = useState('');
   const [gender, setGender] = useState<'Female' | 'Male'>('Female');
   const [departureIdx, setDepartureIdx] = useState(0);
-  const [adults, setAdults] = useState(2);
+  const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
   const [infants, setInfants] = useState(0);
   const [notes, setNotes] = useState('');
@@ -161,7 +181,7 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
     setMethod('GCash'); setRefNumber(''); setProofAttached(false); setPaymentError('');
     const idx = prefill ? tour.departures.findIndex((d) => d.id === prefill.departure.id) : 0;
     setDepartureIdx(idx >= 0 ? idx : 0);
-    setAdults(prefill?.travelers ?? 2);
+    setAdults(prefill?.travelers ?? 1);
     setChildren(0); setInfants(0);
     setBookingId('');
     setConfirmedTotal(0);
@@ -210,21 +230,66 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
     setStep(3);
   };
 
-  const downloadReceipt = async () => {
-    const receipt = [
-      'GoVenture Travel and Tours — Booking Receipt',
-      `Booking ID: ${bookingId}`,
-      `Destination: ${tour.destination}`,
-      `Travel Dates: ${formatDateTime(departure.startISO)} – ${formatDateTime(departure.endISO)}`,
-      `Payment Method: ${method}`,
-      `Total Amount: ${money(confirmedTotal)}`,
-      `Amount Paid: ${money(confirmedTotal)}`,
-      'Payment Status: Pending',
-    ].join('\n');
+  const handleDownloadReceipt = async () => {
+    const travelersLine = `${adults} ${adults === 1 ? 'Adult' : 'Adults'}`
+      + (children ? `, ${children} ${children === 1 ? 'Child' : 'Children'}` : '')
+      + (infants ? `, ${infants} ${infants === 1 ? 'Infant' : 'Infants'}` : '');
+
+    const row = (label: string, value: string) => `
+      <tr>
+        <td style="padding:8px 0;color:#6B3318;font-size:12px;font-weight:700;">${label}</td>
+        <td style="padding:8px 0;color:#3B1A0C;font-size:12px;font-weight:800;text-align:right;">${value}</td>
+      </tr>`;
+
+    const html = `
+      <html>
+        <head><meta charset="utf-8" /></head>
+        <body style="font-family:-apple-system,Helvetica,Arial,sans-serif;margin:0;padding:0;background:#FDF0E6;">
+          <div style="background:#3B1A0C;padding:28px 32px;">
+            <div style="color:#FFFFFF;font-size:20px;font-weight:900;">GOVENTURE TRAVEL AND TOURS</div>
+            <div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">Official Booking Receipt</div>
+          </div>
+          <div style="padding:28px 32px;">
+            <table width="100%" style="border-collapse:collapse;">
+              ${row('Booking ID', bookingId)}
+              ${row('Issued', formatDateTime(new Date().toISOString()))}
+            </table>
+            <div style="height:1px;background:#E8C4A0;margin:14px 0;"></div>
+            <table width="100%" style="border-collapse:collapse;">
+              ${row('Destination', tour.destination)}
+              ${row('Travel Dates', `${formatDateTime(departure.startISO)} – ${formatDateTime(departure.endISO)}`)}
+              ${row('Travelers', travelersLine)}
+            </table>
+            <div style="height:1px;background:#E8C4A0;margin:14px 0;"></div>
+            <table width="100%" style="border-collapse:collapse;">
+              ${row('Payment Method', method)}
+              ${row('Reference No.', refNumber)}
+            </table>
+            <div style="height:1px;background:#E8C4A0;margin:14px 0;"></div>
+            <table width="100%" style="border-collapse:collapse;">
+              ${row('Total Amount', money(confirmedTotal))}
+              ${row('Amount Paid', money(confirmedTotal))}
+              ${row('Payment Status', 'Pending Verification')}
+            </table>
+            <div style="height:1px;background:#E8C4A0;margin:20px 0;"></div>
+            <div style="color:#3B1A0C;font-size:13px;font-weight:800;">Thank you for booking with GoVenture!</div>
+            <div style="color:#6B3318;font-size:11.5px;margin-top:6px;line-height:1.6;">
+              This receipt confirms your submission — our team will verify your payment
+              and update your booking status shortly.
+            </div>
+          </div>
+        </body>
+      </html>`;
+
     try {
-      await Share.share({ message: receipt, title: `Receipt ${bookingId}` });
+      const result = await downloadReceiptPdf(`GoVenture-Receipt-${bookingId}`, html);
+      if (!result.ok) {
+        Alert.alert('Download failed', result.message);
+      } else if (result.silent) {
+        Alert.alert('Receipt saved', 'Your PDF receipt was saved to your device automatically — no need to pick a share option.');
+      }
     } catch {
-      // sharing cancelled or unsupported — nothing to do
+      Alert.alert('Download failed', 'Something went wrong while saving your receipt. Please try again.');
     }
   };
 
@@ -312,9 +377,11 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
             </View>
           </View>
 
-          <View style={fm.fieldRow}>
+          <View style={fm.countersRow}>
             <CountStepper label="Adults" value={adults} onChange={setAdults} min={1} />
+            <View style={fm.counterDivider} />
             <CountStepper label="Children" value={children} onChange={setChildren} />
+            <View style={fm.counterDivider} />
             <CountStepper label="Infants" value={infants} onChange={setInfants} />
           </View>
         </View>
@@ -457,7 +524,7 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
         <TouchableOpacity style={fm.backBtn} activeOpacity={0.85} onPress={onClose}>
           <Text style={fm.backBtnText}>Close</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={fm.confirmBtn} activeOpacity={0.85} onPress={downloadReceipt}>
+        <TouchableOpacity style={fm.confirmBtn} activeOpacity={0.85} onPress={handleDownloadReceipt}>
           <Text style={fm.confirmBtnText}>Download Receipt</Text>
         </TouchableOpacity>
       </View>
@@ -471,7 +538,7 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
         <View style={[m.header, { paddingTop: insets.top + 14 }]}>
           <Text style={m.headerTitle}>Book Your Tour</Text>
           <Text style={m.headerSub}>Complete your booking in 3 easy steps</Text>
-          <TouchableOpacity style={m.closeBtn} activeOpacity={0.85} onPress={onClose}>
+          <TouchableOpacity style={[m.closeBtn, { top: insets.top + 14 }]} activeOpacity={0.85} onPress={onClose}>
             <CloseIcon />
             <Text style={m.closeText}>Close</Text>
           </TouchableOpacity>
@@ -499,7 +566,7 @@ const m = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.lightBg },
   header: { backgroundColor: C.brown, paddingHorizontal: 16, paddingBottom: 16, position: 'relative' },
   closeBtn: {
-    position: 'absolute', top: 14, right: 16, flexDirection: 'row', alignItems: 'center', gap: 4,
+    position: 'absolute', right: 16, flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#FFFFFF', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
   },
   closeText: { fontSize: 11, fontWeight: '800', color: C.brown },
@@ -508,18 +575,19 @@ const m = StyleSheet.create({
 });
 
 const wz = StyleSheet.create({
-  stepperRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  stepperRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap', marginBottom: 16 },
+  stepItem: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
   stepDot: {
-    width: 24, height: 24, borderRadius: 12, backgroundColor: C.divider,
-    alignItems: 'center', justifyContent: 'center',
+    width: 22, height: 22, borderRadius: 11, backgroundColor: C.divider,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   stepDotActive: { backgroundColor: C.danger },
   stepDotDone: { backgroundColor: C.success },
-  stepDotText: { fontSize: 11, fontWeight: '800', color: C.brownMid },
+  stepDotText: { fontSize: 10.5, fontWeight: '800', color: C.brownMid },
   stepDotTextActive: { color: '#FFFFFF' },
-  stepLabel: { fontSize: 11, fontWeight: '700', color: C.brownMid, opacity: 0.7 },
+  stepLabel: { fontSize: 10.5, fontWeight: '700', color: C.brownMid, opacity: 0.7, flexShrink: 1 },
   stepLabelActive: { color: C.brown, opacity: 1 },
-  stepLine: { width: 18, height: 1, backgroundColor: C.divider },
+  stepLine: { flex: 1, minWidth: 10, maxWidth: 28, height: 1, backgroundColor: C.divider, marginHorizontal: 6 },
 });
 
 const fm = StyleSheet.create({
@@ -529,6 +597,9 @@ const fm = StyleSheet.create({
   },
   cardTitle: { fontSize: 13.5, fontWeight: '900', color: C.brown, marginBottom: 12 },
   fieldRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12 },
+  countersRow: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'stretch', marginBottom: 12 },
+  counterItem: { flex: 1, paddingHorizontal: 8 },
+  counterDivider: { width: 1, backgroundColor: C.divider, marginTop: 2, marginBottom: 2 },
   field: { flexGrow: 1, flexBasis: 130, minWidth: 100 },
   label: { fontSize: 10.5, fontWeight: '800', color: C.brownMid, marginBottom: 6 },
   input: {
@@ -551,10 +622,14 @@ const fm = StyleSheet.create({
   chipText: { fontSize: 11, fontWeight: '700', color: C.brown },
   chipTextActive: { color: '#FFFFFF' },
 
-  stepperRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  stepperBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.lightBg, borderWidth: 1, borderColor: C.divider, alignItems: 'center', justifyContent: 'center' },
-  stepperBtnText: { fontSize: 16, fontWeight: '900', color: C.brown },
-  stepperValue: { fontSize: 13.5, fontWeight: '800', color: C.brown, minWidth: 18, textAlign: 'center' },
+  stepperRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stepperBtn: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.lightBg, borderWidth: 1, borderColor: C.divider, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  stepperBtnText: { fontSize: 15, fontWeight: '900', color: C.brown },
+  stepperInput: {
+    flex: 1, minWidth: 0, borderWidth: 1, borderColor: C.divider, backgroundColor: C.lightBg,
+    borderRadius: 8, paddingVertical: 6, paddingHorizontal: 2,
+    fontSize: 13.5, fontWeight: '800', color: C.brown, textAlign: 'center',
+  },
 
   backBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,

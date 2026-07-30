@@ -7,9 +7,10 @@
  */
 
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet, Platform } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { C } from './theme';
+import { useAuth } from '@/components/auth/AuthContext';
 
 const HamburgerIcon = ({ color = C.white }: { color?: string }) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
@@ -17,7 +18,12 @@ const HamburgerIcon = ({ color = C.white }: { color?: string }) => (
   </Svg>
 );
 
+const initialsOf = (name: string) =>
+  name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
+
 export default function ClientTopNav({ onOpenMenu }: { onOpenMenu: () => void }) {
+  const { user } = useAuth();
+
   return (
     <View style={tn.shadowLayer}>
       <View style={tn.ticket}>
@@ -40,6 +46,16 @@ export default function ClientTopNav({ onOpenMenu }: { onOpenMenu: () => void })
             </Text>
             <Text style={tn.tagline} numberOfLines={1}>—  TRAVEL & TOURS  —</Text>
           </View>
+
+          {!!user && (
+            <View style={tn.avatar}>
+              {user.avatarUrl ? (
+                <Image source={{ uri: user.avatarUrl }} style={tn.avatarImage} resizeMode="cover" />
+              ) : (
+                <Text style={tn.avatarText}>{initialsOf(user.fullName)}</Text>
+              )}
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -97,7 +113,7 @@ const tn = StyleSheet.create({
   },
   body: {
     flex: 1, minWidth: 0,
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: C.white,
     paddingHorizontal: 12, paddingVertical: 10,
     overflow: 'hidden',
@@ -107,4 +123,11 @@ const tn = StyleSheet.create({
   brandGo:      { fontSize: 19, fontWeight: '900', color: C.brown, letterSpacing: -0.3 },
   brandVenture: { fontSize: 19, fontWeight: '900', color: C.amber, letterSpacing: -0.3 },
   tagline: { fontSize: 9, fontWeight: '800', color: C.brownMid, letterSpacing: 1.2, marginTop: 2, opacity: 0.8 },
+
+  avatar: {
+    width: 32, height: 32, borderRadius: 16, flexShrink: 0, marginLeft: 10,
+    backgroundColor: C.amber, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  avatarImage: { width: '100%', height: '100%' },
+  avatarText: { fontSize: 11.5, fontWeight: '900', color: '#FFFFFF' },
 });

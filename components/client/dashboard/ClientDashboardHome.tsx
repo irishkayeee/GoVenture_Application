@@ -18,12 +18,13 @@ import { useBookings, Booking } from '../bookings/BookingsContext';
 import { fetchTours, Tour } from '../tours/mockData';
 import { useFavorites } from '../tours/FavoritesContext';
 import { TRIP_WEATHER_API_URL } from '@/constants/api';
+import StatDetailModal, { StatColumn } from './StatDetailModal';
 
 const money = (n: number) => `₱${n.toLocaleString('en-US')}`;
 
 const WIDE_BREAKPOINT = 900;
 
-export type DashboardNavTarget = 'tours' | 'plan' | 'bookings' | 'documents' | 'messages';
+export type DashboardNavTarget = 'tours' | 'bookings' | 'documents' | 'messages';
 
 /* ── Icons ── */
 const CalendarIcon = ({ color = C.amber, size = 20 }: { color?: string; size?: number }) => (
@@ -150,10 +151,10 @@ function DashboardHero({ name }: { name: string }) {
 }
 
 /* ── Stat cards ── */
-function StatCardItem({ card }: { card: StatCard }) {
+function StatCardItem({ card, onPress }: { card: StatCard; onPress: () => void }) {
   const Icon = STAT_ICONS[card.icon];
   return (
-    <View style={st.card}>
+    <TouchableOpacity style={st.card} activeOpacity={0.8} onPress={onPress}>
       <View style={[st.iconWrap, { backgroundColor: card.iconBg }]}>
         <Icon color={card.iconColor} size={17} />
       </View>
@@ -172,7 +173,7 @@ function StatCardItem({ card }: { card: StatCard }) {
           </Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -199,12 +200,14 @@ function Section({ title, subtitle, viewAllLabel, onViewAll, children }: {
 }
 
 /* ── Favorites ── */
-function FavoriteCard({ tour, onPress }: { tour: FavoriteTour; onPress: () => void }) {
+function FavoriteCard({ tour, onPress, onToggleFavorite }: { tour: FavoriteTour; onPress: () => void; onToggleFavorite: () => void }) {
   return (
     <View style={fc.card}>
       <View style={fc.banner}>
         <Text style={{ fontSize: 34 }}>{tour.emoji}</Text>
-        <View style={fc.heart}><HeartIcon /></View>
+        <TouchableOpacity style={fc.heart} activeOpacity={0.8} onPress={onToggleFavorite} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <HeartIcon />
+        </TouchableOpacity>
       </View>
       <View style={fc.body}>
         <Text style={fc.dest} numberOfLines={1}>{tour.destination}</Text>
@@ -247,10 +250,13 @@ function CountdownBox({ value, label }: { value: number; label: string }) {
   );
 }
 
+type WeatherDay = { date: string; label: string; icon: string; tempMax: number; tempMin: number };
 type TripWeather = {
   available: boolean;
   location?: string;
+  daysUntil?: number;
   current?: { temp: number; label: string; icon: string };
+  daily?: WeatherDay[];
 };
 
 const WEATHER_ICON_PATHS: Record<string, string> = {
@@ -292,6 +298,155 @@ function TripWeatherChip({ destination, dateFrom }: { destination: string; dateF
     </View>
   );
 }
+
+const weekdayShort = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
+const monthDayShort = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+function WeatherWidget({ destination, dateFrom }: { destination: string; dateFrom: string }) {
+  const [weather, setWeather] = useState<TripWeather | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const dateOnly = dateFrom.slice(0, 10);
+    fetch(`${TRIP_WEATHER_API_URL}&destination=${encodeURIComponent(destination)}&date=${dateOnly}`)
+      .then((res) => res.json())
+      .then((result) => { if (!cancelled && result.status === 'success') setWeather(result.data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [destination, dateFrom]);
+
+  return (
+    <View style={ww.card}>
+      <Text style={ww.title}>Weather in {weather?.location ?? destination}</Text>
+
+      {loading ? (
+        <Text style={ww.hint}>Loading forecast…</Text>
+      ) : !weather?.available || !weather.current ? (
+        <Text style={ww.hint}>
+          {weather && weather.daysUntil !== undefined && weather.daysUntil > 0
+            ? `Forecast opens up ${weather.daysUntil <= 7 ? 'soon' : `${weather.daysUntil - 7} day${weather.daysUntil - 7 === 1 ? '' : 's'} before it's this accurate`} — check back closer to your trip.`
+            : 'Forecast isn’t available for this trip yet.'}
+        </Text>
+      ) : (
+        <>
+          <View style={ww.currentRow}>
+            <WeatherIcon icon={weather.current.icon} color={C.amber} size={34} />
+            <View>
+              <Text style={ww.currentTemp}>{weather.current.temp}°C</Text>
+              <Text style={ww.currentLabel}>{weather.current.label}</Text>
+            </View>
+          </View>
+
+          {expanded && weather.daily && (
+            <View style={ww.forecastRow}>
+              {weather.daily.map((d) => (
+                <View key={d.date} style={ww.forecastDay}>
+                  <Text style={ww.forecastDayLabel}>{weekdayShort(d.date)}</Text>
+                  <Text style={ww.forecastDayDate}>{monthDayShort(d.date)}</Text>
+                  <WeatherIcon icon={d.icon} color={C.amber} size={18} />
+                  <Text style={ww.forecastTempMax}>{d.tempMax}°</Text>
+                  <Text style={ww.forecastTempMin}>{d.tempMin}°</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {weather.daily && weather.daily.length > 0 && (
+            <TouchableOpacity style={ww.toggleBtn} activeOpacity={0.75} onPress={() => setExpanded((v) => !v)}>
+              <Text style={ww.toggleBtnText}>{expanded ? 'Hide forecast' : 'View 7-day forecast'} →</Text>
+            </TouchableOpacity>
+          )}
+        </>
+      )}
+    </View>
+  );
+}
+
+/** Dummy PH-wide forecast (Manila) — always available, not tied to any trip. */
+const PH_WEATHER_MOCK: TripWeather = {
+  available: true,
+  location: 'Manila, Philippines',
+  current: { temp: 29, label: 'Partly Cloudy', icon: 'partly-cloudy' },
+  daily: [
+    { date: '2026-07-30', label: 'Rain',          icon: 'rain',          tempMax: 30, tempMin: 25 },
+    { date: '2026-07-31', label: 'Thunderstorm',  icon: 'storm',         tempMax: 29, tempMin: 24 },
+    { date: '2026-08-01', label: 'Rain',          icon: 'rain',          tempMax: 28, tempMin: 24 },
+    { date: '2026-08-02', label: 'Partly Cloudy', icon: 'partly-cloudy', tempMax: 31, tempMin: 25 },
+    { date: '2026-08-03', label: 'Sunny',         icon: 'sun',           tempMax: 32, tempMin: 26 },
+    { date: '2026-08-04', label: 'Cloudy',        icon: 'cloudy',        tempMax: 29, tempMin: 25 },
+    { date: '2026-08-05', label: 'Rain',          icon: 'rain',          tempMax: 28, tempMin: 24 },
+  ],
+};
+
+/** Local PH weather (dummy data) — a separate, always-on widget distinct from the destination forecast below it. */
+function PhilippinesWeatherWidget() {
+  const [expanded, setExpanded] = useState(false);
+  const weather = PH_WEATHER_MOCK;
+
+  return (
+    <View style={ww.card}>
+      <Text style={ww.title}>Weather in the Philippines</Text>
+      <Text style={ww.locationSub}>{weather.location}</Text>
+
+      <View style={ww.currentRow}>
+        <WeatherIcon icon={weather.current!.icon} color={C.amber} size={34} />
+        <View>
+          <Text style={ww.currentTemp}>{weather.current!.temp}°C</Text>
+          <Text style={ww.currentLabel}>{weather.current!.label}</Text>
+        </View>
+      </View>
+
+      {expanded && (
+        <View style={ww.forecastRow}>
+          {weather.daily!.map((d) => (
+            <View key={d.date} style={ww.forecastDay}>
+              <Text style={ww.forecastDayLabel}>{weekdayShort(d.date)}</Text>
+              <Text style={ww.forecastDayDate}>{monthDayShort(d.date)}</Text>
+              <WeatherIcon icon={d.icon} color={C.amber} size={18} />
+              <Text style={ww.forecastTempMax}>{d.tempMax}°</Text>
+              <Text style={ww.forecastTempMin}>{d.tempMin}°</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <TouchableOpacity style={ww.toggleBtn} activeOpacity={0.75} onPress={() => setExpanded((v) => !v)}>
+        <Text style={ww.toggleBtnText}>{expanded ? 'Hide forecast' : 'View 7-day forecast'} →</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const ww = StyleSheet.create({
+  card: {
+    backgroundColor: C.cardBg, borderRadius: 14, padding: 14, marginTop: 12,
+    borderWidth: 1, borderColor: C.divider,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
+      android: { elevation: 2 },
+    }),
+  },
+  title: { fontSize: 12.5, fontWeight: '900', color: C.brown },
+  locationSub: { fontSize: 10, color: C.brownMid, opacity: 0.65, marginTop: 1 },
+  hint: { fontSize: 11, color: C.brownMid, opacity: 0.7, marginTop: 10, lineHeight: 15 },
+  currentRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 },
+  currentTemp: { fontSize: 26, fontWeight: '900', color: C.brown },
+  currentLabel: { fontSize: 11, color: C.brownMid, opacity: 0.8, marginTop: 1 },
+
+  forecastRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14, gap: 4 },
+  forecastDay: { alignItems: 'center', gap: 3, flex: 1 },
+  forecastDayLabel: { fontSize: 9, fontWeight: '800', color: C.brownMid, opacity: 0.75 },
+  forecastDayDate: { fontSize: 8, fontWeight: '600', color: C.brownMid, opacity: 0.55, marginTop: -2 },
+  forecastTempMax: { fontSize: 10.5, fontWeight: '800', color: C.brown },
+  forecastTempMin: { fontSize: 9.5, color: C.brownMid, opacity: 0.65 },
+
+  toggleBtn: { marginTop: 12, alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: C.divider },
+  toggleBtnText: { fontSize: 11.5, fontWeight: '800', color: C.amber },
+});
 
 function UpcomingTripCard({ trip, onViewAll }: { trip: Booking; onViewAll: () => void }) {
   const { days, hours, mins, secs } = useCountdown(trip.dateFrom);
@@ -346,7 +501,7 @@ export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigat
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
   const { bookings } = useBookings();
-  const { favoriteIds } = useFavorites();
+  const { favoriteIds, toggleFavorite } = useFavorites();
 
   const [tours, setTours] = useState<Tour[]>([]);
 
@@ -395,6 +550,41 @@ export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigat
     [bookings]
   );
 
+  const [activeModal, setActiveModal] = useState<'tours' | 'bookings' | 'places' | 'payments' | null>(null);
+
+  const upcomingRows = useMemo(
+    () =>
+      [...bookings.filter((b) => b.status === 'Upcoming' || b.status === 'Ongoing')]
+        .sort((a, b) => new Date(a.dateFrom).getTime() - new Date(b.dateFrom).getTime()),
+    [bookings]
+  );
+  const placesRows = useMemo(
+    () =>
+      [...bookings.filter((b) => b.status === 'Completed')]
+        .sort((a, b) => new Date(b.dateFrom).getTime() - new Date(a.dateFrom).getTime()),
+    [bookings]
+  );
+  const pendingRows = useMemo(
+    () =>
+      [...bookings.filter((b) => b.paymentStatus === 'Pending' && b.balanceDue > 0)]
+        .sort((a, b) => new Date(a.dateFrom).getTime() - new Date(b.dateFrom).getTime()),
+    [bookings]
+  );
+  const allBookingsRows = useMemo(
+    () => [...bookings].sort((a, b) => new Date(b.dateFrom).getTime() - new Date(a.dateFrom).getTime()),
+    [bookings]
+  );
+
+  const refDestCol: StatColumn<Booking> = {
+    key: 'ref', label: 'REF', flex: 1.1, accessor: (b) => b.id, sortValue: (b) => b.id,
+  };
+  const destCol: StatColumn<Booking> = {
+    key: 'destination', label: 'DESTINATION', flex: 1.6, accessor: (b) => b.destination, sortValue: (b) => b.destination,
+  };
+  const dateCol: StatColumn<Booking> = {
+    key: 'date', label: 'DATE', flex: 1, accessor: (b) => formatShort(b.dateFrom), sortValue: (b) => b.dateFrom,
+  };
+
   const statCards: StatCard[] = [
     {
       key: 'tours', label: 'Upcoming Tours', value: String(upcomingCount), icon: 'calendar',
@@ -419,7 +609,11 @@ export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigat
   ];
 
   const sidebar = upcomingTrip ? (
-    <UpcomingTripCard trip={upcomingTrip} onViewAll={() => onNavigate('bookings')} />
+    <>
+      <UpcomingTripCard trip={upcomingTrip} onViewAll={() => onNavigate('bookings')} />
+      <PhilippinesWeatherWidget />
+      <WeatherWidget destination={upcomingTrip.destination} dateFrom={upcomingTrip.dateFrom} />
+    </>
   ) : (
     <NoUpcomingTripCard onBrowse={() => onNavigate('tours')} />
   );
@@ -432,7 +626,7 @@ export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigat
         ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={fc.grid}>
             {favoriteTours.map((f) => (
-              <FavoriteCard key={f.id} tour={f} onPress={() => onNavigate('tours')} />
+              <FavoriteCard key={f.id} tour={f} onPress={() => onNavigate('tours')} onToggleFavorite={() => toggleFavorite(f.id)} />
             ))}
           </ScrollView>
         )}
@@ -456,7 +650,9 @@ export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigat
         <DashboardHero name={name} />
 
         <View style={st.grid}>
-          {statCards.map((c) => <StatCardItem key={c.key} card={c} />)}
+          {statCards.map((c) => (
+            <StatCardItem key={c.key} card={c} onPress={() => setActiveModal(c.key as typeof activeModal)} />
+          ))}
         </View>
 
         {isWide ? (
@@ -473,6 +669,84 @@ export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigat
 
         <Copyright />
       </ScrollView>
+
+      <StatDetailModal
+        visible={activeModal === 'tours'}
+        onClose={() => setActiveModal(null)}
+        icon={<CalendarIcon color={C.amber} />}
+        title="Upcoming Tours"
+        subtitle="Your confirmed trips that haven't departed yet."
+        rows={upcomingRows}
+        columns={[refDestCol, destCol, dateCol]}
+        keyAccessor={(b) => b.id}
+        searchAccessor={(b) => `${b.id} ${b.destination}`}
+        summaryAmount={(rows) => money(rows.reduce((sum, b) => sum + b.totalAmount, 0))}
+        emptyText="No upcoming tours match your search."
+        footerLabel="View My Bookings"
+        onFooterPress={() => onNavigate('bookings')}
+      />
+
+      <StatDetailModal
+        visible={activeModal === 'bookings'}
+        onClose={() => setActiveModal(null)}
+        icon={<ClipboardIcon color={C.success} />}
+        title="Total Bookings"
+        subtitle="Every trip you've booked with us — past, ongoing, and upcoming."
+        rows={allBookingsRows}
+        columns={[
+          refDestCol, destCol, dateCol,
+          { key: 'status', label: 'STATUS', flex: 1, accessor: (b) => b.status, sortValue: (b) => b.status },
+        ]}
+        keyAccessor={(b) => b.id}
+        searchAccessor={(b) => `${b.id} ${b.destination} ${b.status}`}
+        summaryAmount={(rows) => money(rows.reduce((sum, b) => sum + b.totalAmount, 0))}
+        emptyText="No bookings match your search."
+        footerLabel="View My Bookings"
+        onFooterPress={() => onNavigate('bookings')}
+        defaultSortKey="date"
+        defaultSortDir="desc"
+      />
+
+      <StatDetailModal
+        visible={activeModal === 'places'}
+        onClose={() => setActiveModal(null)}
+        icon={<PinIcon color="#9C27B0" />}
+        title="Places Visited"
+        subtitle="Destinations from your completed trips."
+        rows={placesRows}
+        columns={[
+          destCol,
+          { key: 'date', label: 'DATE VISITED', flex: 1, accessor: (b) => formatShort(b.dateFrom), sortValue: (b) => b.dateFrom },
+        ]}
+        keyAccessor={(b) => b.id}
+        searchAccessor={(b) => b.destination}
+        emptyText="No completed trips yet — your visited places will show up here."
+        footerLabel="View My Bookings"
+        onFooterPress={() => onNavigate('bookings')}
+        defaultSortKey="date"
+        defaultSortDir="desc"
+      />
+
+      <StatDetailModal
+        visible={activeModal === 'payments'}
+        onClose={() => setActiveModal(null)}
+        icon={<CardIcon color={C.danger} />}
+        title="Pending Payment"
+        subtitle="Bookings with a balance still due."
+        rows={pendingRows}
+        columns={[
+          refDestCol, destCol,
+          { key: 'amountDue', label: 'AMOUNT DUE', flex: 1, accessor: (b) => money(b.balanceDue), sortValue: (b) => b.balanceDue },
+          // No separate due-date field exists on bookings — balance is due before departure, so the trip's start date is the due date.
+          { key: 'dueDate', label: 'DUE DATE', flex: 1, accessor: (b) => formatShort(b.dateFrom), sortValue: (b) => b.dateFrom },
+        ]}
+        keyAccessor={(b) => b.id}
+        searchAccessor={(b) => `${b.id} ${b.destination}`}
+        summaryAmount={(rows) => `${money(rows.reduce((sum, b) => sum + b.balanceDue, 0))} pending`}
+        emptyText="Nothing pending — you're all settled up!"
+        footerLabel="View My Bookings"
+        onFooterPress={() => onNavigate('bookings')}
+      />
     </View>
   );
 }

@@ -56,15 +56,20 @@ export const TRIP_WEATHER_API_URL = `${API_URL}?action=trip_weather`;
 
 // ── Client: Account ──
 export const CLIENT_ACCOUNT_GET_API_URL = `${API_URL}?action=client_account_get`;
+export const CLIENT_PROFILE_UPDATE_API_URL = `${API_URL}?action=client_profile_update`;
+export const CLIENT_AVATAR_UPDATE_API_URL = `${API_URL}?action=client_avatar_update`;
 
 // ── Client: Messages ──
 export const CLIENT_CONVERSATIONS_LIST_API_URL = `${API_URL}?action=client_conversations_list`;
 export const CLIENT_SEND_MESSAGE_API_URL = `${API_URL}?action=client_send_message`;
 export const CLIENT_MARK_CONVERSATION_READ_API_URL = `${API_URL}?action=client_mark_conversation_read`;
 export const CLIENT_END_CONVERSATION_API_URL = `${API_URL}?action=client_end_conversation`;
+export const CLIENT_ARCHIVE_CONVERSATION_API_URL = `${API_URL}?action=client_archive_conversation`;
+export const CLIENT_START_CONVERSATION_API_URL = `${API_URL}?action=client_start_conversation`;
 
 // ── Client: Documents ──
 export const CLIENT_DOCUMENTS_LIST_API_URL = `${API_URL}?action=client_documents_list`;
+export const CLIENT_DOCUMENTS_OVERVIEW_API_URL = `${API_URL}?action=client_documents_overview`;
 export const DOCUMENT_UPLOAD_API_URL = `${API_URL}?action=document_upload`;
 export const DOCUMENT_REMOVE_API_URL = `${API_URL}?action=document_remove`;
 

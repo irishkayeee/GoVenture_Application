@@ -24,12 +24,21 @@ export type TourConversation = {
   location:      string;
   travelDates:   string;
   guestLabel:    string;
-  bookingStatus: BookingStatus;
+  bookingStatus: BookingStatus | '';
   totalAmount:   string;
   emoji:         string;
   lastMessage:   string;
   timeAgo:       string;
-  unread:        boolean;
+  unreadCount:   number;
   ended:         boolean;
+  isArchived:    boolean;
   messages:      ChatMessage[];
 };
+
+export const QUICK_REPLIES = [
+  'Documents Needed',
+  'Payment Schedule',
+  'Visa Requirements',
+  'Flight Updates',
+  'Pickup Location',
+] as const;

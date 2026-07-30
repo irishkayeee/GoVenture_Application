@@ -14,7 +14,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.goventure.travelandtours",
-      "icon": "./assets/images/go_logo.png"
+      "icon": "./assets/images/go_logo.png",
+      "infoPlist": {
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true
+      }
     },
     "android": {
       "package": "com.goventure.travelandtours",

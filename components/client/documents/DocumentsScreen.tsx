@@ -1,47 +1,216 @@
 /**
  * DocumentsScreen.tsx
- * Client Documents tab — pick a booking, see its required-document
- * checklist and overall progress, and upload each file (image picker →
- * base64 → document_upload), backed by the real booking_documents table.
+ * Client Documents tab — mobile two-screen flow:
+ *   Screen 1: a sortable list of the user's bookings, each showing Booking /
+ *   Payment / Documents status badges (client_documents_overview).
+ *   Screen 2: full document detail for one booking — a Travel Readiness
+ *   ring, summary cards, and three expandable sections (Traveler Documents,
+ *   backed by the real per-file checklist + upload/remove; Agency Documents
+ *   and Travel Documents, whose availability is computed live from the
+ *   booking's real status/payment fields, not stored anywhere).
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
-  StyleSheet, useWindowDimensions, ActivityIndicator, Alert,
+  StyleSheet, ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C } from '../theme';
 import ClientPageHero from '../ClientPageHero';
-import { useBookings } from '../bookings/BookingsContext';
 import { useAuth } from '@/components/auth/AuthContext';
-import { RequiredDocument } from './mockData';
-import { CLIENT_DOCUMENTS_LIST_API_URL, DOCUMENT_UPLOAD_API_URL, DOCUMENT_REMOVE_API_URL } from '@/constants/api';
+import {
+  RequiredDocument, DocumentStatus, DocumentsOverview,
+  AgencyDocument, TravelDocument, BookingStatus, PaymentStatus, TravelerDocsStatus,
+  AGENCY_DOC_DESCRIPTIONS, TRAVEL_DOC_DESCRIPTIONS,
+} from './mockData';
+import {
+  CLIENT_DOCUMENTS_OVERVIEW_API_URL, CLIENT_DOCUMENTS_LIST_API_URL,
+  DOCUMENT_UPLOAD_API_URL, DOCUMENT_REMOVE_API_URL,
+} from '@/constants/api';
 
-const WIDE_BREAKPOINT = 900;
-
-/* ── Icons ── */
-const DocIcon = ({ color = C.brown }: { color?: string }) => (
-  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-    <Path d="M7 3h7l4 4v14a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
-    <Path d="M14 3v4h4" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+/* ── Icons (solid-style, no emoji) ── */
+const BackIcon = () => (
+  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+    <Path d="M15 19l-7-7 7-7" stroke={C.brown} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
-const ChevronIcon = ({ open }: { open: boolean }) => (
-  <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}>
-    <Path d="M6 9l6 6 6-6" stroke={C.brown} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+const PinIcon = ({ color = C.amber, size = 12 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path fill={color} d="M12 22s7.5-7.94 7.5-13A7.5 7.5 0 004.5 9c0 5.06 7.5 13 7.5 13z" />
+    <Circle cx={12} cy={9} r={2.6} fill="#FFFFFF" />
   </Svg>
 );
-const CheckIcon = () => (
-  <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
-    <Path d="M4 12l6 6L20 6" stroke={C.success} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+const CalendarIcon = ({ color = C.brownMid, size = 13 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path fill={color} d="M7 2a1 1 0 011 1v1h8V3a1 1 0 112 0v1h1a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h1V3a1 1 0 011-1zM5 10v10h14V10H5z" />
+  </Svg>
+);
+const PersonIcon = ({ color = C.brownMid, size = 14 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Circle cx={12} cy={8} r={4} fill={color} />
+    <Path fill={color} d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7v1H4v-1z" />
+  </Svg>
+);
+const ChevronIcon = ({ open, color = C.brown, size = 10 }: { open: boolean; color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}>
+    <Path fill={color} d="M12 16L4 8h16z" />
+  </Svg>
+);
+const ChevronSmallIcon = ({ color = C.brownMid, size = 9 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path fill={color} d="M8 5l8 7-8 7z" />
+  </Svg>
+);
+const ArrowRightIcon = ({ color = C.amber, size = 10 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path fill={color} d="M4 11h13.2l-4.6-4.6L14 5l7 7-7 7-1.4-1.4L17.2 13H4z" />
+  </Svg>
+);
+const LockIcon = ({ color = C.brownMid, size = 13 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path fill={color} d="M12 2a5 5 0 015 5v3h1a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2v-8a2 2 0 012-2h1V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v3h6V7a3 3 0 00-3-3zm0 10a1.5 1.5 0 00-.34 2.96L11.3 19h1.4l-.36-2.04A1.5 1.5 0 0012 14z" />
+  </Svg>
+);
+const CheckCircleIcon = ({ color = C.success, size = 14 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Circle cx={12} cy={12} r={10} fill={color} />
+    <Path d="M7 12.5l3 3 7-7" stroke="#FFFFFF" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </Svg>
+);
+const PlusIcon = ({ color = '#FFFFFF', size = 11 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path fill={color} d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z" />
   </Svg>
 );
 
-function ProgressRing({ percent }: { percent: number }) {
-  const size = 72, stroke = 7, r = (size - stroke) / 2, c = 2 * Math.PI * r;
+/** Shared solid document silhouette — folded top-right corner, colored fill, white accent glyph on top. */
+function DocGlyph({ color, size = 18, children }: { color: string; size?: number; children?: React.ReactNode }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path fill={color} d="M6 2h8l5 5v14a1 1 0 01-1 1H6a1 1 0 01-1-1V3a1 1 0 011-1z" />
+      <Path fill="#FFFFFF" opacity={0.32} d="M14 2v5h5z" />
+      {children}
+    </Svg>
+  );
+}
+const IdCardDocIcon = ({ color = C.brown, size = 18 }: { color?: string; size?: number }) => (
+  <DocGlyph color={color} size={size}>
+    <Circle cx={9.3} cy={12.6} r={1.7} fill="#FFFFFF" />
+    <Path fill="#FFFFFF" d="M6.8 17.2c.3-1.5 1.4-2.4 2.5-2.4s2.2.9 2.5 2.4H6.8zM13 12h4v1.2h-4zM13 14.4h4v1.2h-4z" />
+  </DocGlyph>
+);
+const PassportDocIcon = ({ color = C.brown, size = 18 }: { color?: string; size?: number }) => (
+  <DocGlyph color={color} size={size}>
+    <Circle cx={11} cy={13.3} r={3} stroke="#FFFFFF" strokeWidth={1.1} fill="none" />
+    <Path stroke="#FFFFFF" strokeWidth={1.1} d="M8.2 13.3h5.6M11 10.4v5.8" fill="none" />
+  </DocGlyph>
+);
+const QuotationDocIcon = ({ color = C.amber, size = 18 }: { color?: string; size?: number }) => (
+  <DocGlyph color={color} size={size}>
+    <Circle cx={15.3} cy={16.3} r={3.1} fill="#FFFFFF" />
+    <Path stroke={color} strokeWidth={1.3} strokeLinecap="round" fill="none" d="M15.3 14.6v3.4M14.3 15.1c0-.5.5-.8 1-.8s1.1.3 1.1.8-.5.7-1.1.9-1 .4-1 .9.5.8 1 .8 1-.3 1-.8" />
+  </DocGlyph>
+);
+const StatementDocIcon = ({ color = C.info, size = 18 }: { color?: string; size?: number }) => (
+  <DocGlyph color={color} size={size}>
+    <Path fill="#FFFFFF" d="M8 17.2v-3h1.7v3H8zm3-1.1v-4.4h1.7v4.4H11zm3 1.1v-2.2h1.7v2.2H14z" />
+  </DocGlyph>
+);
+const InvoiceDocIcon = ({ color = C.brown, size = 18 }: { color?: string; size?: number }) => (
+  <DocGlyph color={color} size={size}>
+    <Path fill="#FFFFFF" d="M7.3 11.2h9v1.3h-9zM7.3 13.8h9v1.3h-9zM7.3 16.4h6v1.3h-6z" />
+  </DocGlyph>
+);
+const ReceiptDocIcon = ({ color = C.success, size = 18 }: { color?: string; size?: number }) => (
+  <DocGlyph color={color} size={size}>
+    <Circle cx={15.4} cy={16.4} r={3.1} fill="#FFFFFF" />
+    <Path d="M13.9 16.5l1.1 1 1.8-2" stroke={color} strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </DocGlyph>
+);
+const VoucherDocIcon = ({ color = C.amber, size = 18 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path fill={color} d="M3 7a2 2 0 012-2h14a2 2 0 012 2v2a1.6 1.6 0 000 3.2v1.8a2 2 0 01-2 2H5a2 2 0 01-2-2v-1.8a1.6 1.6 0 000-3.2V7z" />
+    <Path stroke="#FFFFFF" strokeWidth={1.2} strokeDasharray="2,2" d="M12 5.5v13" />
+  </Svg>
+);
+const ItineraryDocIcon = ({ color = C.info, size = 18 }: { color?: string; size?: number }) => (
+  <DocGlyph color={color} size={size}>
+    <Circle cx={8.7} cy={11.8} r={1.1} fill="#FFFFFF" />
+    <Circle cx={15} cy={13.6} r={1.1} fill="#FFFFFF" />
+    <Circle cx={10.2} cy={17} r={1.1} fill="#FFFFFF" />
+    <Path stroke="#FFFFFF" strokeWidth={1} strokeDasharray="1.4,1.4" fill="none" d="M8.7 11.8L15 13.6l-4.8 3.4" />
+  </DocGlyph>
+);
+const MemoDocIcon = ({ color = C.brownMid, size = 18 }: { color?: string; size?: number }) => (
+  <DocGlyph color={color} size={size}>
+    <Circle cx={15.6} cy={11.4} r={1.3} fill="#FFFFFF" />
+    <Path fill="#FFFFFF" d="M7.3 14.2h9v1.2h-9zM7.3 16.6h6v1.2h-6z" />
+  </DocGlyph>
+);
+const DOC_TYPE_ICON: Record<string, React.FC<{ color?: string; size?: number }>> = {
+  'valid-id': IdCardDocIcon,
+  passport: PassportDocIcon,
+  quotation: QuotationDocIcon,
+  statement_of_account: StatementDocIcon,
+  invoice: InvoiceDocIcon,
+  official_receipt: ReceiptDocIcon,
+  tour_voucher: VoucherDocIcon,
+  tour_itinerary: ItineraryDocIcon,
+  memo: MemoDocIcon,
+};
+
+/* ── Status color maps (soft bg + colored text, consistent across the screen) ── */
+type StatusStyle = { bg: string; color: string };
+const REQUIRED_DOC_STYLE: Record<DocumentStatus, StatusStyle> = {
+  'Pending Upload':     { bg: '#F1F1F1', color: C.brownMid },
+  Submitted:            { bg: '#FFF5E0', color: '#B8922E' },
+  Approved:             { bg: '#E7F9F3', color: '#12946F' },
+  Rejected:             { bg: '#FDEAEA', color: C.danger },
+  'Reupload Requested': { bg: '#FCE4E1', color: '#E5473A' },
+};
+const BOOKING_STATUS_STYLE: Record<BookingStatus, StatusStyle> = {
+  Pending:   { bg: '#FFF5E0', color: '#B8922E' },
+  Confirmed: { bg: '#E8F1FC', color: C.info },
+  Ongoing:   { bg: '#E8F1FC', color: C.info },
+  Completed: { bg: '#E7F9F3', color: '#12946F' },
+  Cancelled: { bg: '#FDEAEA', color: C.danger },
+};
+const PAYMENT_STATUS_STYLE: Record<PaymentStatus, StatusStyle> = {
+  Unpaid:       { bg: '#FDEAEA', color: C.danger },
+  Partial:      { bg: '#FFF5E0', color: '#B8922E' },
+  'Fully Paid': { bg: '#E7F9F3', color: '#12946F' },
+  Overdue:      { bg: '#FDEAEA', color: C.danger },
+  Refunded:     { bg: '#F1F1F1', color: C.brownMid },
+};
+const TRAVELER_DOCS_STYLE: Record<TravelerDocsStatus, StatusStyle> = {
+  'Not Started':     { bg: '#F1F1F1', color: C.brownMid },
+  'In Progress':     { bg: '#FFF5E0', color: '#B8922E' },
+  'Needs Attention': { bg: '#FDEAEA', color: C.danger },
+  Complete:          { bg: '#E7F9F3', color: '#12946F' },
+};
+const WAITING_STYLE: StatusStyle = { bg: '#E8F1FC', color: C.info };
+const AVAILABLE_STYLE: StatusStyle = { bg: '#E7F9F3', color: '#12946F' };
+
+function StatusBadge({ label, style }: { label: string; style: StatusStyle }) {
+  return (
+    <View style={[bd.pill, { backgroundColor: style.bg }]}>
+      <Text style={[bd.pillText, { color: style.color }]}>{label}</Text>
+    </View>
+  );
+}
+const bd = StyleSheet.create({
+  pill: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
+  pillText: { fontSize: 10, fontWeight: '800' },
+});
+
+const formatShort = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+/* ── Travel Readiness ring ── */
+function ReadinessRing({ percent }: { percent: number }) {
+  const size = 70, stroke = 7, r = (size - stroke) / 2, c = 2 * Math.PI * r;
   return (
     <View style={{ width: size, height: size }}>
       <Svg width={size} height={size}>
@@ -56,122 +225,110 @@ function ProgressRing({ percent }: { percent: number }) {
           origin={`${size / 2}, ${size / 2}`}
         />
       </Svg>
-      <View style={pr.center}>
-        <Text style={pr.centerText}>{percent}%</Text>
+      <View style={rr.center}>
+        <Text style={rr.centerText}>{percent}%</Text>
       </View>
     </View>
   );
 }
+const rr = StyleSheet.create({
+  center: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  centerText: { fontSize: 13, fontWeight: '900', color: C.brown },
+});
 
-function DocumentCard({ doc, onUpload, onRemove, width, busy }: { doc: RequiredDocument; onUpload: () => void; onRemove: () => void; width: any; busy?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const approved = doc.status === 'Approved';
-  const needsReupload = doc.status === 'Rejected' || doc.status === 'Reupload Requested';
-  const submitted = doc.status === 'Submitted' || approved;
-  const pillDone = approved || submitted;
-
+/* ── Collapsible section shell ── */
+function Section({ title, subtitle, open, onToggle, children }: {
+  title: string; subtitle?: string; open: boolean; onToggle: () => void; children: React.ReactNode;
+}) {
   return (
-    <View style={[dc.card, { width }]}>
-      <View style={dc.topRow}>
-        <View style={dc.iconBox}><DocIcon /></View>
+    <View style={sc.card}>
+      <TouchableOpacity style={sc.header} activeOpacity={0.75} onPress={onToggle}>
+        <ChevronIcon open={open} />
+        <Text style={sc.title}>{title}</Text>
+        <View style={{ flex: 1 }} />
+        {!!subtitle && <Text style={sc.subtitle} numberOfLines={1}>{subtitle}</Text>}
+      </TouchableOpacity>
+      {open && <View style={sc.body}>{children}</View>}
+    </View>
+  );
+}
+const sc = StyleSheet.create({
+  card: { backgroundColor: C.cardBg, borderRadius: 14, borderWidth: 1, borderColor: C.divider, marginHorizontal: 16, marginTop: 14 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14 },
+  title: { fontSize: 13.5, fontWeight: '900', color: C.brown },
+  subtitle: { fontSize: 10, color: C.brownMid, opacity: 0.65, maxWidth: 140 },
+  body: { paddingHorizontal: 14, paddingBottom: 14, gap: 10 },
+});
+
+/* ── A row inside Agency Documents / Travel Documents ── */
+function DocRow({ icon: Icon, title, description, status, dependsOn, tint }: {
+  icon: React.FC<{ color?: string; size?: number }>;
+  title: string; description: string; status: string; dependsOn: string[]; tint: string;
+}) {
+  const available = status === 'Available';
+  return (
+    <View style={rw.row}>
+      <View style={rw.topLine}>
+        <View style={[rw.iconBox, { backgroundColor: tint + '1A' }]}><Icon color={tint} /></View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            {(doc.status === 'Pending Upload' || needsReupload) && <View style={[dc.dot, needsReupload && { backgroundColor: C.danger }]} />}
-            <Text style={dc.title}>{doc.title}</Text>
-          </View>
+          <Text style={rw.title}>{title}</Text>
+          <Text style={rw.desc} numberOfLines={2}>{description}</Text>
         </View>
-        <View style={[dc.statusPill, pillDone && dc.statusPillDone, needsReupload && dc.statusPillRejected]}>
-          <Text style={[dc.statusPillText, pillDone && dc.statusPillTextDone, needsReupload && dc.statusPillTextRejected]}>{doc.status}</Text>
-        </View>
+        <StatusBadge label={status} style={available ? AVAILABLE_STYLE : WAITING_STYLE} />
       </View>
-
-      <Text style={dc.desc}>{doc.description}</Text>
-
-      {needsReupload && !!doc.adminComment && (
-        <View style={dc.commentBox}>
-          <Text style={dc.commentLabel}>Reviewer note</Text>
-          <Text style={dc.commentText}>{doc.adminComment}</Text>
+      {!available && dependsOn.length > 0 && (
+        <View style={rw.dependBox}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <LockIcon />
+            <Text style={rw.dependLabel}>Complete these first:</Text>
+          </View>
+          {dependsOn.map((dep) => (
+            <View key={dep} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3, marginLeft: 18 }}>
+              <ArrowRightIcon />
+              <Text style={rw.dependLink}>{dep}</Text>
+            </View>
+          ))}
         </View>
       )}
-
-      <TouchableOpacity style={dc.instructionsRow} activeOpacity={0.75} onPress={() => setExpanded((v) => !v)}>
-        <DocIcon color={C.amber} />
-        <Text style={dc.instructionsLabel}>Upload Instructions</Text>
-        <View style={{ flex: 1 }} />
-        <ChevronIcon open={expanded} />
-      </TouchableOpacity>
-      {expanded && <Text style={dc.instructionsText}>{doc.instructions}</Text>}
-
-      <View style={dc.footerRow}>
-        <Text style={dc.fileText} numberOfLines={1}>
-          {doc.fileName ? (submitted ? `✓ ${doc.fileName}` : doc.fileName) : 'No file uploaded yet'}
-        </Text>
-        <TouchableOpacity
-          style={[dc.uploadBtn, submitted && dc.uploadBtnDone, needsReupload && dc.uploadBtnReupload, busy && { opacity: 0.6 }]}
-          activeOpacity={0.85}
-          onPress={approved ? undefined : submitted ? onRemove : onUpload}
-          disabled={busy || approved}
-        >
-          {busy ? (
-            <ActivityIndicator size="small" color={submitted ? C.success : '#FFFFFF'} />
-          ) : needsReupload ? (
-            <Text style={dc.uploadBtnTextReupload}>Re-upload</Text>
-          ) : (
-            <>
-              {submitted ? <CheckIcon /> : null}
-              <Text style={[dc.uploadBtnText, submitted && dc.uploadBtnTextDone]}>{submitted ? 'Uploaded' : '+ Upload'}</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
+const rw = StyleSheet.create({
+  row: { borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 10 },
+  topLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  iconBox: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  title: { fontSize: 12.5, fontWeight: '800', color: C.brown },
+  desc: { fontSize: 10.5, color: C.brownMid, opacity: 0.75, marginTop: 2, lineHeight: 14 },
+  dependBox: { backgroundColor: C.lightBg, borderRadius: 10, padding: 10, marginTop: 8 },
+  dependLabel: { fontSize: 10, fontWeight: '800', color: C.brownMid },
+  dependLink: { fontSize: 10.5, fontWeight: '700', color: C.amber },
+});
 
-export default function DocumentsScreen() {
-  const { width } = useWindowDimensions();
-  const isWide = width >= WIDE_BREAKPOINT;
-  const { bookings } = useBookings();
+/* ── Traveler Documents: itemized checklist (Government ID + Passport), with real upload/remove ── */
+function TravelerChecklist({ bookingId, onChanged }: { bookingId: string; onChanged: () => void }) {
   const { user } = useAuth();
-  const scrollRef = useRef<ScrollView>(null);
-  const checklistY = useRef(0);
-
-  const [selectedId, setSelectedId] = useState<string | null>(bookings[0]?.id ?? null);
-  const [byBooking, setByBooking] = useState<Record<string, RequiredDocument[]>>({});
+  const [documents, setDocuments] = useState<RequiredDocument[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [busyDocId, setBusyDocId] = useState<string | null>(null);
-
-  const selectedBooking = bookings.find((b) => b.id === selectedId) ?? bookings[0] ?? null;
+  const [openInstructions, setOpenInstructions] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!selectedBooking) { setLoading(false); return; }
+    if (!user) return;
     setLoading(true);
-    setError('');
-    fetch(`${CLIENT_DOCUMENTS_LIST_API_URL}&userId=${user?.id}&bookingId=${selectedBooking.id}`)
+    fetch(`${CLIENT_DOCUMENTS_LIST_API_URL}&userId=${user.id}&bookingId=${bookingId}`)
       .then((res) => res.json())
-      .then((result) => {
-        if (result.status !== 'success') throw new Error(result.message || 'Failed to load documents.');
-        setByBooking((prev) => ({ ...prev, [selectedBooking.id]: result.data }));
-      })
-      .catch((e) => setError(e.message || 'Failed to load documents.'))
+      .then((result) => { if (result.status === 'success') setDocuments(result.data); })
       .finally(() => setLoading(false));
-  }, [selectedBooking?.id, user?.id]);
-
-  const documents = selectedBooking ? byBooking[selectedBooking.id] ?? [] : [];
+  }, [user, bookingId]);
 
   const handleUpload = async (docId: string) => {
-    if (!selectedBooking || !user) return;
+    if (!user) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('Permission needed', 'Allow photo library access to upload a document.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.6,
-      base64: true,
-    });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6, base64: true });
     if (result.canceled || !result.assets?.[0]?.base64) return;
     const asset = result.assets[0];
     const mimeType = asset.mimeType ?? 'image/jpeg';
@@ -181,24 +338,15 @@ export default function DocumentsScreen() {
       const res = await fetch(DOCUMENT_UPLOAD_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          bookingId: selectedBooking.id,
-          docType: docId,
-          fileDataUri: `data:${mimeType};base64,${asset.base64}`,
-        }),
+        body: JSON.stringify({ userId: user.id, bookingId, docType: docId, fileDataUri: `data:${mimeType};base64,${asset.base64}` }),
       });
       const uploadResult = await res.json();
       if (uploadResult.status !== 'success') {
         Alert.alert('Upload failed', uploadResult.message || 'Please try again.');
         return;
       }
-      setByBooking((prev) => ({
-        ...prev,
-        [selectedBooking.id]: (prev[selectedBooking.id] ?? []).map((d) =>
-          d.id === docId ? { ...d, status: uploadResult.data.status, fileName: uploadResult.data.fileName, adminComment: null } : d
-        ),
-      }));
+      setDocuments((prev) => prev.map((d) => (d.id === docId ? { ...d, status: uploadResult.data.status, fileName: uploadResult.data.fileName, adminComment: null } : d)));
+      onChanged();
     } catch {
       Alert.alert('Upload failed', 'Please check your connection and try again.');
     } finally {
@@ -207,201 +355,463 @@ export default function DocumentsScreen() {
   };
 
   const handleRemove = async (docId: string) => {
-    if (!selectedBooking || !user) return;
+    if (!user) return;
     setBusyDocId(docId);
     try {
       const res = await fetch(DOCUMENT_REMOVE_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, bookingId: selectedBooking.id, docType: docId }),
+        body: JSON.stringify({ userId: user.id, bookingId, docType: docId }),
       });
       const result = await res.json();
       if (result.status !== 'success') return;
-      setByBooking((prev) => ({
-        ...prev,
-        [selectedBooking.id]: (prev[selectedBooking.id] ?? []).map((d) =>
-          d.id === docId ? { ...d, status: 'Pending Upload', fileName: null, adminComment: null } : d
-        ),
-      }));
+      setDocuments((prev) => prev.map((d) => (d.id === docId ? { ...d, status: 'Pending Upload', fileName: null, adminComment: null } : d)));
+      onChanged();
     } finally {
       setBusyDocId(null);
     }
   };
 
-  const required = documents.length;
-  const submittedCount = documents.filter((d) => d.status === 'Submitted').length;
-  const approvedCount = documents.filter((d) => d.status === 'Approved').length;
-  const percent = required === 0 ? 0 : Math.round(((submittedCount + approvedCount) / required) * 100);
+  if (loading) return <ActivityIndicator color={C.amber} style={{ marginVertical: 12 }} />;
 
-  const columns = isWide ? 3 : (width >= 620 ? 2 : 1);
-  const cardWidth = columns === 1 ? '100%' : columns === 2 ? '48.5%' : '32%';
+  return (
+    <View style={{ gap: 10 }}>
+      {documents.map((doc) => {
+        const Icon = DOC_TYPE_ICON[doc.id] ?? IdCardDocIcon;
+        const style = REQUIRED_DOC_STYLE[doc.status];
+        const approved = doc.status === 'Approved';
+        const needsReupload = doc.status === 'Rejected' || doc.status === 'Reupload Requested';
+        const submitted = doc.status === 'Submitted' || approved;
+        const busy = busyDocId === doc.id;
+        return (
+          <View key={doc.id} style={tc.card}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+              <View style={[tc.iconBox, { backgroundColor: style.color + '1A' }]}><Icon color={style.color} /></View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={tc.title}>{doc.title}</Text>
+                <Text style={tc.desc}>{doc.description}</Text>
+              </View>
+              <StatusBadge label={doc.status} style={style} />
+            </View>
 
-  if (bookings.length === 0 || !selectedBooking) {
-    return (
-      <View style={{ flex: 1 }}>
-        <ClientPageHero icon="📄" title="Documents" subtitle="Upload the documents required for your bookings." />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 }}>
-          <Text style={{ fontSize: 40 }}>📄</Text>
-          <Text style={{ fontSize: 15, fontWeight: '900', color: C.brown }}>No bookings yet</Text>
-          <Text style={{ fontSize: 12, color: C.brownMid, textAlign: 'center' }}>
-            Once you book a tour, its required documents will show up here.
-          </Text>
-        </View>
-        <Copyright />
+            {needsReupload && !!doc.adminComment && (
+              <View style={tc.commentBox}>
+                <Text style={tc.commentLabel}>Reviewer note</Text>
+                <Text style={tc.commentText}>{doc.adminComment}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity style={tc.instructionsRow} activeOpacity={0.75} onPress={() => setOpenInstructions((v) => (v === doc.id ? null : doc.id))}>
+              <Text style={tc.instructionsLabel}>Upload Instructions</Text>
+              <ChevronSmallIcon color={C.amber} />
+            </TouchableOpacity>
+            {openInstructions === doc.id && <Text style={tc.instructionsText}>{doc.instructions}</Text>}
+
+            <View style={tc.footerRow}>
+              <Text style={tc.fileText} numberOfLines={1}>{doc.fileName ?? 'No file uploaded yet'}</Text>
+              <TouchableOpacity
+                style={[tc.actionBtn, submitted && tc.actionBtnDone, needsReupload && tc.actionBtnReupload, busy && { opacity: 0.6 }]}
+                activeOpacity={0.85}
+                onPress={approved ? undefined : submitted ? () => handleRemove(doc.id) : () => handleUpload(doc.id)}
+                disabled={busy || approved}
+              >
+                {busy ? (
+                  <ActivityIndicator size="small" color={submitted ? '#12946F' : '#FFFFFF'} />
+                ) : needsReupload ? (
+                  <Text style={tc.actionBtnTextReupload}>Re-upload</Text>
+                ) : submitted ? (
+                  <>
+                    <CheckCircleIcon size={12} />
+                    <Text style={tc.actionBtnTextDone}>Uploaded</Text>
+                  </>
+                ) : (
+                  <>
+                    <PlusIcon />
+                    <Text style={tc.actionBtnText}>Upload</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+const tc = StyleSheet.create({
+  card: { backgroundColor: C.lightBg, borderRadius: 12, borderWidth: 1, borderColor: C.divider, padding: 12, gap: 8 },
+  iconBox: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  title: { fontSize: 12, fontWeight: '800', color: C.brown },
+  desc: { fontSize: 10, color: C.brownMid, opacity: 0.75, marginTop: 1 },
+  commentBox: { backgroundColor: '#FCE4E1', borderRadius: 8, padding: 8 },
+  commentLabel: { fontSize: 9, fontWeight: '800', color: C.danger },
+  commentText: { fontSize: 10, color: C.brownMid, marginTop: 2, lineHeight: 13 },
+  instructionsRow: { flexDirection: 'row', alignItems: 'center', gap: 5, borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 8 },
+  instructionsLabel: { fontSize: 10.5, fontWeight: '800', color: C.brown },
+  instructionsText: { fontSize: 10, color: C.brownMid, lineHeight: 14 },
+  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  fileText: { fontSize: 9.5, color: C.brownMid, opacity: 0.7, flexShrink: 1 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.danger, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7, flexShrink: 0 },
+  actionBtnDone: { backgroundColor: '#EAF7EC' },
+  actionBtnReupload: { backgroundColor: C.amber },
+  actionBtnText: { fontSize: 10, fontWeight: '800', color: '#FFFFFF' },
+  actionBtnTextDone: { fontSize: 10, fontWeight: '800', color: '#12946F' },
+  actionBtnTextReupload: { fontSize: 10, fontWeight: '800', color: '#FFFFFF' },
+});
+
+/* ══════════════════════════ Screen 1: Bookings list ══════════════════════════ */
+type SortKey = 'departure' | 'booking' | 'payment' | 'documents';
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'departure', label: 'Nearest Departure' },
+  { key: 'booking', label: 'Booking Status' },
+  { key: 'payment', label: 'Payment Status' },
+  { key: 'documents', label: 'Documents Status' },
+];
+
+function BookingCard({ item, onPress }: { item: DocumentsOverview; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={bc.card} activeOpacity={0.85} onPress={onPress}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+        <PinIcon />
+        <Text style={bc.dest} numberOfLines={1}>{item.destination}</Text>
       </View>
-    );
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
+        <Text style={bc.ref}>{item.id}</Text>
+        <Text style={bc.dot}>·</Text>
+        <CalendarIcon size={11} />
+        <Text style={bc.date}>Departs {formatShort(item.dateFrom)}</Text>
+      </View>
+
+      <View style={bc.statusList}>
+        <View style={bc.statusRow}>
+          <Text style={bc.statusLabel}>Booking</Text>
+          <StatusBadge label={item.bookingStatus} style={BOOKING_STATUS_STYLE[item.bookingStatus]} />
+        </View>
+        <View style={bc.statusRow}>
+          <Text style={bc.statusLabel}>Payment</Text>
+          <StatusBadge label={item.paymentStatus} style={PAYMENT_STATUS_STYLE[item.paymentStatus]} />
+        </View>
+        <View style={bc.statusRow}>
+          <Text style={bc.statusLabel}>Documents</Text>
+          <StatusBadge label={item.travelerDocsStatus} style={TRAVELER_DOCS_STYLE[item.travelerDocsStatus]} />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+const bc = StyleSheet.create({
+  card: {
+    backgroundColor: C.cardBg, borderRadius: 14, borderWidth: 1, borderColor: C.divider,
+    padding: 14, marginHorizontal: 16, marginBottom: 12,
+  },
+  dest: { fontSize: 14, fontWeight: '900', color: C.brown, flexShrink: 1 },
+  ref: { fontSize: 10.5, fontWeight: '700', color: C.brownMid, opacity: 0.8 },
+  dot: { fontSize: 10.5, color: C.brownMid, opacity: 0.5 },
+  date: { fontSize: 10.5, color: C.brownMid, opacity: 0.8 },
+  statusList: { marginTop: 10, gap: 7 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  statusLabel: { fontSize: 11, fontWeight: '700', color: C.brownMid, opacity: 0.75 },
+});
+
+function SortDropdown({ value, onChange }: { value: SortKey; onChange: (v: SortKey) => void }) {
+  const [open, setOpen] = useState(false);
+  const activeLabel = SORT_OPTIONS.find((o) => o.key === value)?.label ?? '';
+  return (
+    <View style={{ marginHorizontal: 16, marginTop: 12, position: 'relative', zIndex: 10 }}>
+      <TouchableOpacity style={sd.trigger} activeOpacity={0.8} onPress={() => setOpen((v) => !v)}>
+        <Text style={sd.triggerLabel}>Sort by: <Text style={sd.triggerValue}>{activeLabel}</Text></Text>
+        <ChevronIcon open={open} size={9} color={C.brownMid} />
+      </TouchableOpacity>
+      {open && (
+        <View style={sd.menu}>
+          {SORT_OPTIONS.map((opt) => (
+            <TouchableOpacity
+              key={opt.key}
+              style={sd.menuItem}
+              activeOpacity={0.75}
+              onPress={() => { onChange(opt.key); setOpen(false); }}
+            >
+              <Text style={[sd.menuItemText, opt.key === value && sd.menuItemTextActive]}>{opt.label}</Text>
+              {opt.key === value && <CheckCircleIcon size={13} />}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+const sd = StyleSheet.create({
+  trigger: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: C.cardBg, borderWidth: 1, borderColor: C.divider, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 11, alignSelf: 'flex-start', minWidth: 220,
+  },
+  triggerLabel: { fontSize: 11.5, fontWeight: '700', color: C.brownMid, marginRight: 10 },
+  triggerValue: { color: C.brown, fontWeight: '900' },
+  menu: {
+    position: 'absolute', top: 46, left: 0, backgroundColor: C.cardBg, borderRadius: 12,
+    borderWidth: 1, borderColor: C.divider, paddingVertical: 4, minWidth: 220,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+      android: { elevation: 8 },
+    }),
+  },
+  menuItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 11 },
+  menuItemText: { fontSize: 12, fontWeight: '700', color: C.brown },
+  menuItemTextActive: { color: '#12946F', fontWeight: '900' },
+});
+
+/* ══════════════════════════ Screen 2: Document Detail ══════════════════════════ */
+function DocumentDetailScreen({ overview, onBack, onRefresh }: { overview: DocumentsOverview; onBack: () => void; onRefresh: () => void }) {
+  const [travelerOpen, setTravelerOpen] = useState(true);
+  const [agencyOpen, setAgencyOpen] = useState(true);
+  const [travelOpen, setTravelOpen] = useState(true);
+
+  const percent = overview.travelerDocsTotal === 0 ? 0 : Math.round((overview.travelerDocsApproved / overview.travelerDocsTotal) * 100);
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={dh.topBar}>
+        <TouchableOpacity style={dh.backBtn} onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <BackIcon />
+        </TouchableOpacity>
+        <Text style={dh.topBarTitle}>Document Detail</Text>
+      </View>
+
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        <View style={dh.banner}>
+          <Text style={dh.bannerDest}>{overview.destination}</Text>
+          <Text style={dh.bannerRef}>{overview.id}</Text>
+          <View style={dh.bannerFactsRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <PersonIcon color="#FFFFFF" />
+              <Text style={dh.bannerFactText}>{overview.passengerName}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <CalendarIcon color="#FFFFFF" />
+              <Text style={dh.bannerFactText}>Departs {formatShort(overview.dateFrom)}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={dh.readinessCard}>
+          <ReadinessRing percent={percent} />
+          <View style={{ flex: 1 }}>
+            <Text style={dh.readinessTitle}>Travel Readiness</Text>
+            <Text style={dh.readinessSub}>{overview.travelerDocsApproved} of {overview.travelerDocsTotal} Documents approved</Text>
+          </View>
+        </View>
+
+        <View style={dh.summaryGrid}>
+          <View style={dh.summaryCard}>
+            <Text style={dh.summaryLabel}>BOOKING STATUS</Text>
+            <StatusBadge label={overview.bookingStatus} style={BOOKING_STATUS_STYLE[overview.bookingStatus]} />
+          </View>
+          <View style={dh.summaryCard}>
+            <Text style={dh.summaryLabel}>PAYMENT STATUS</Text>
+            <StatusBadge label={overview.paymentStatus} style={PAYMENT_STATUS_STYLE[overview.paymentStatus]} />
+          </View>
+          <View style={dh.summaryCard}>
+            <Text style={dh.summaryLabel}>TRAVELER DOCUMENTS</Text>
+            <StatusBadge label={overview.travelerDocsStatus} style={TRAVELER_DOCS_STYLE[overview.travelerDocsStatus]} />
+          </View>
+          <View style={dh.summaryCard}>
+            <Text style={dh.summaryLabel}>AGENCY DOCUMENTS</Text>
+            <StatusBadge
+              label={overview.agencyDocuments.every((d) => d.status === 'Available') ? 'Available' : 'Waiting for Agency'}
+              style={overview.agencyDocuments.every((d) => d.status === 'Available') ? AVAILABLE_STYLE : WAITING_STYLE}
+            />
+          </View>
+        </View>
+
+        <Section
+          title={`Traveler Documents (1 Traveler)`}
+          open={travelerOpen}
+          onToggle={() => setTravelerOpen((v) => !v)}
+        >
+          <View style={tr.ownerRow}>
+            <View style={tr.avatar}><PersonIcon color="#FFFFFF" size={16} /></View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={tr.name}>{overview.passengerName}</Text>
+                <View style={tr.ownerTag}><Text style={tr.ownerTagText}>BOOKING OWNER</Text></View>
+              </View>
+            </View>
+            <StatusBadge label={overview.travelerDocsStatus} style={TRAVELER_DOCS_STYLE[overview.travelerDocsStatus]} />
+          </View>
+          <TravelerChecklist bookingId={overview.id} onChanged={onRefresh} />
+        </Section>
+
+        <Section
+          title="Agency Documents"
+          subtitle="Quotation · SOA · Invoice · Receipt"
+          open={agencyOpen}
+          onToggle={() => setAgencyOpen((v) => !v)}
+        >
+          {overview.agencyDocuments.map((doc: AgencyDocument) => (
+            <DocRow
+              key={doc.type}
+              icon={DOC_TYPE_ICON[doc.type]}
+              title={doc.title}
+              description={AGENCY_DOC_DESCRIPTIONS[doc.type] ?? ''}
+              status={doc.status}
+              dependsOn={doc.dependsOn}
+              tint={C.info}
+            />
+          ))}
+        </Section>
+
+        <Section
+          title="Travel Documents"
+          subtitle="Voucher · Itinerary · Memo"
+          open={travelOpen}
+          onToggle={() => setTravelOpen((v) => !v)}
+        >
+          {overview.travelDocuments.map((doc: TravelDocument) => (
+            <DocRow
+              key={doc.type}
+              icon={DOC_TYPE_ICON[doc.type]}
+              title={doc.title}
+              description={TRAVEL_DOC_DESCRIPTIONS[doc.type] ?? ''}
+              status={doc.status}
+              dependsOn={doc.dependsOn}
+              tint={C.amber}
+            />
+          ))}
+        </Section>
+
+        <Copyright />
+      </ScrollView>
+    </View>
+  );
+}
+const dh = StyleSheet.create({
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: C.divider, backgroundColor: C.cardBg,
+  },
+  backBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  topBarTitle: { fontSize: 14.5, fontWeight: '900', color: C.brown },
+
+  banner: {
+    backgroundColor: C.brown, borderRadius: 16, padding: 18,
+    marginHorizontal: 16, marginTop: 16,
+  },
+  bannerDest: { fontSize: 18, fontWeight: '900', color: '#FFFFFF' },
+  bannerRef: { fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 2, fontWeight: '700' },
+  bannerFactsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 12 },
+  bannerFactText: { fontSize: 11.5, color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+
+  readinessCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: C.cardBg, borderRadius: 14, borderWidth: 1, borderColor: C.divider,
+    padding: 14, marginHorizontal: 16, marginTop: 14,
+  },
+  readinessTitle: { fontSize: 13, fontWeight: '900', color: C.brown },
+  readinessSub: { fontSize: 10.5, color: C.brownMid, opacity: 0.75, marginTop: 3 },
+
+  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: '3%', paddingHorizontal: 16, marginTop: 14 },
+  summaryCard: {
+    width: '48.5%', backgroundColor: C.cardBg, borderRadius: 12, borderWidth: 1, borderColor: C.divider,
+    padding: 12, marginBottom: 10, gap: 7,
+  },
+  summaryLabel: { fontSize: 9, fontWeight: '800', color: C.brownMid, opacity: 0.7, letterSpacing: 0.3 },
+});
+const tr = StyleSheet.create({
+  ownerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.amber, alignItems: 'center', justifyContent: 'center' },
+  name: { fontSize: 12.5, fontWeight: '900', color: C.brown },
+  ownerTag: { backgroundColor: '#EAF7EC', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
+  ownerTagText: { fontSize: 8, fontWeight: '800', color: '#12946F' },
+});
+
+/* ══════════════════════════ Main ══════════════════════════ */
+type Props = {
+  /** Booking reference (e.g. "GV-2026-07723") to open straight into Screen 2 for, e.g. when arriving from "View Documents" on a booking. */
+  initialBookingId?: string | null;
+  /** Called once the initial booking id above has been applied, so the caller can clear it and not re-trigger on a later, unrelated visit to this tab. */
+  onConsumedInitialBooking?: () => void;
+};
+
+export default function DocumentsScreen({ initialBookingId, onConsumedInitialBooking }: Props) {
+  const { user } = useAuth();
+  const [overview, setOverview] = useState<DocumentsOverview[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(initialBookingId ?? null);
+  const [sortBy, setSortBy] = useState<SortKey>('departure');
+
+  useEffect(() => {
+    if (initialBookingId) onConsumedInitialBooking?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const load = useCallback(() => {
+    if (!user) return;
+    setLoading(true);
+    setError('');
+    fetch(`${CLIENT_DOCUMENTS_OVERVIEW_API_URL}&userId=${user.id}`)
+      .then((res) => res.json())
+      .then((result) => {
+        if (result.status !== 'success') throw new Error(result.message || 'Failed to load documents.');
+        setOverview(result.data);
+      })
+      .catch((e) => setError(e.message || 'Failed to load documents.'))
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const sorted = useMemo(() => {
+    const list = [...overview];
+    switch (sortBy) {
+      case 'booking':    list.sort((a, b) => a.bookingStatus.localeCompare(b.bookingStatus)); break;
+      case 'payment':    list.sort((a, b) => a.paymentStatus.localeCompare(b.paymentStatus)); break;
+      case 'documents':  list.sort((a, b) => a.travelerDocsStatus.localeCompare(b.travelerDocsStatus)); break;
+      default:           list.sort((a, b) => new Date(a.dateFrom).getTime() - new Date(b.dateFrom).getTime());
+    }
+    return list;
+  }, [overview, sortBy]);
+
+  const selected = useMemo(() => overview.find((b) => b.id === selectedId) ?? null, [overview, selectedId]);
+
+  if (selected) {
+    return <DocumentDetailScreen overview={selected} onBack={() => setSelectedId(null)} onRefresh={load} />;
   }
 
   return (
-    <ScrollView ref={scrollRef} style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-      <ClientPageHero icon="📄" title="Documents" subtitle="Upload the documents required for your bookings." />
-
-      <View style={pl.wrap}>
-        {bookings.map((b) => {
-          const active = b.id === selectedBooking.id;
-          return (
-            <TouchableOpacity key={b.id} style={[pl.pill, active && pl.pillActive]} activeOpacity={0.8} onPress={() => setSelectedId(b.id)}>
-              <Text style={[pl.pillText, active && pl.pillTextActive]}>{b.destination} · {b.id}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+    <View style={{ flex: 1 }}>
+      <ClientPageHero icon="📄" title="Documents" subtitle="Track and manage documents for every booking." />
 
       {loading ? (
-        <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={C.amber} />
         </View>
       ) : error ? (
-        <View style={{ paddingVertical: 40, alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 12, color: C.danger, textAlign: 'center', paddingHorizontal: 24 }}>{error}</Text>
-          <TouchableOpacity onPress={() => setSelectedId(selectedBooking.id)}>
-            <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.amber }}>Tap to retry</Text>
-          </TouchableOpacity>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24 }}>
+          <Text style={{ fontSize: 12, color: C.danger, textAlign: 'center' }}>{error}</Text>
+          <TouchableOpacity onPress={load}><Text style={{ fontSize: 12.5, fontWeight: '800', color: C.amber }}>Tap to retry</Text></TouchableOpacity>
+        </View>
+      ) : overview.length === 0 ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24 }}>
+          <Text style={{ fontSize: 15, fontWeight: '900', color: C.brown }}>No bookings yet</Text>
+          <Text style={{ fontSize: 12, color: C.brownMid, textAlign: 'center' }}>Once you book a tour, its documents will show up here.</Text>
         </View>
       ) : (
-      <>
-      <View style={pg.card}>
-        <ProgressRing percent={percent} />
-        <View style={{ flex: 1, minWidth: 160 }}>
-          <Text style={pg.title}>Documents Progress</Text>
-          <View style={pg.barTrack}>
-            <View style={[pg.barFill, { width: `${percent}%` }]} />
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 4, paddingBottom: 30 }}>
+          <SortDropdown value={sortBy} onChange={setSortBy} />
+          <Text style={{ fontSize: 11, color: C.brownMid, opacity: 0.6, marginHorizontal: 16, marginTop: 10, marginBottom: 4 }}>
+            {sorted.length} {sorted.length === 1 ? 'booking' : 'bookings'}
+          </Text>
+          <View style={{ marginTop: 8 }}>
+            {sorted.map((item) => (
+              <BookingCard key={item.id} item={item} onPress={() => setSelectedId(item.id)} />
+            ))}
           </View>
-          <View style={pg.statsRow}>
-            <View style={pg.statPill}><Text style={pg.statPillText}>📁 {required} Required</Text></View>
-            <View style={[pg.statPill, pg.statPillBlue]}><Text style={pg.statPillText}>📤 {submittedCount} Submitted</Text></View>
-            <View style={[pg.statPill, pg.statPillGreen]}><Text style={pg.statPillText}>✓ {approvedCount} Approved</Text></View>
-          </View>
-        </View>
-        <TouchableOpacity
-          style={pg.uploadBtn}
-          activeOpacity={0.85}
-          onPress={() => scrollRef.current?.scrollTo({ y: checklistY.current, animated: true })}
-        >
-          <Text style={pg.uploadBtnText}>+ Upload Document</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View
-        style={{ paddingHorizontal: 16, marginTop: 18, marginBottom: 10 }}
-        onLayout={(e) => { checklistY.current = e.nativeEvent.layout.y; }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={sec.title}>Required Documents</Text>
-          <View style={sec.countBadge}><Text style={sec.countBadgeText}>{required}</Text></View>
-        </View>
-        <Text style={sec.sub}>Documents you need to provide</Text>
-      </View>
-
-      <View style={{ paddingHorizontal: 16, flexDirection: 'row', flexWrap: 'wrap', gap: '2%', rowGap: 14 }}>
-        {documents.map((doc) => (
-          <DocumentCard
-            key={doc.id}
-            doc={doc}
-            width={cardWidth}
-            busy={busyDocId === doc.id}
-            onUpload={() => handleUpload(doc.id)}
-            onRemove={() => handleRemove(doc.id)}
-          />
-        ))}
-      </View>
-      </>
+          <Copyright />
+        </ScrollView>
       )}
-
-      <Copyright />
-    </ScrollView>
+    </View>
   );
 }
-
-/* ── Styles ── */
-const pl = StyleSheet.create({
-  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, marginTop: 14 },
-  pill: { borderWidth: 1, borderColor: C.divider, backgroundColor: C.cardBg, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
-  pillActive: { backgroundColor: C.brown, borderColor: C.brown },
-  pillText: { fontSize: 11.5, fontWeight: '700', color: C.brown },
-  pillTextActive: { color: '#FFFFFF' },
-});
-
-const pr = StyleSheet.create({
-  center: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  centerText: { fontSize: 14, fontWeight: '900', color: C.brown },
-});
-
-const pg = StyleSheet.create({
-  card: {
-    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 16,
-    backgroundColor: C.cardBg, borderRadius: 16, borderWidth: 1, borderColor: C.divider,
-    padding: 16, marginHorizontal: 16, marginTop: 16,
-  },
-  title: { fontSize: 15, fontWeight: '900', color: C.brown },
-  barTrack: { height: 8, borderRadius: 4, backgroundColor: C.divider, marginTop: 10, overflow: 'hidden' },
-  barFill: { height: 8, borderRadius: 4, backgroundColor: C.amber },
-  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  statPill: { backgroundColor: C.lightBg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  statPillBlue: { backgroundColor: '#E8F1FC' },
-  statPillGreen: { backgroundColor: '#EAF7EC' },
-  uploadBtn: { backgroundColor: C.danger, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12, alignSelf: 'flex-start' },
-  uploadBtnText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
-  statPillText: { fontSize: 10.5, fontWeight: '700', color: C.brown },
-});
-
-const sec = StyleSheet.create({
-  title: { fontSize: 15.5, fontWeight: '900', color: C.brown },
-  countBadge: { width: 20, height: 20, borderRadius: 10, backgroundColor: C.lightBg, borderWidth: 1, borderColor: C.amber, alignItems: 'center', justifyContent: 'center' },
-  countBadgeText: { fontSize: 10.5, fontWeight: '900', color: C.amber },
-  sub: { fontSize: 11.5, color: C.brownMid, opacity: 0.75, marginTop: 2 },
-});
-
-const dc = StyleSheet.create({
-  card: { backgroundColor: C.cardBg, borderRadius: 14, borderWidth: 1, borderColor: C.divider, padding: 14 },
-  topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  iconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: C.lightBg, alignItems: 'center', justifyContent: 'center' },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.danger },
-  title: { fontSize: 12.5, fontWeight: '900', color: C.brown, flexShrink: 1 },
-
-  statusPill: { backgroundColor: C.lightBg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
-  statusPillDone: { backgroundColor: '#EAF7EC' },
-  statusPillRejected: { backgroundColor: '#FCE4E1' },
-  statusPillText: { fontSize: 9.5, fontWeight: '800', color: C.brownMid },
-  statusPillTextDone: { color: C.success },
-  statusPillTextRejected: { color: C.danger },
-
-  desc: { fontSize: 11, color: C.brownMid, marginTop: 10, lineHeight: 15 },
-
-  commentBox: { backgroundColor: '#FCE4E1', borderRadius: 10, padding: 10, marginTop: 10 },
-  commentLabel: { fontSize: 9.5, fontWeight: '800', color: C.danger, letterSpacing: 0.3 },
-  commentText: { fontSize: 11, color: C.brownMid, marginTop: 3, lineHeight: 15 },
-
-  instructionsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, borderTopWidth: 1, borderTopColor: C.divider, marginTop: 12, paddingTop: 10 },
-  instructionsLabel: { fontSize: 11, fontWeight: '800', color: C.brown },
-  instructionsText: { fontSize: 10.5, color: C.brownMid, lineHeight: 15, marginTop: 6 },
-
-  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 12 },
-  fileText: { fontSize: 10, color: C.brownMid, opacity: 0.75, flexShrink: 1 },
-  uploadBtn: { backgroundColor: C.danger, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, flexShrink: 0 },
-  uploadBtnDone: { backgroundColor: '#EAF7EC', flexDirection: 'row', alignItems: 'center', gap: 4 },
-  uploadBtnReupload: { backgroundColor: C.amber },
-  uploadBtnText: { fontSize: 10.5, fontWeight: '800', color: '#FFFFFF' },
-  uploadBtnTextDone: { color: C.success },
-  uploadBtnTextReupload: { fontSize: 10.5, fontWeight: '800', color: '#FFFFFF' },
-});

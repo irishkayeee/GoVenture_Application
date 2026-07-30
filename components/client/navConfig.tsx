@@ -10,7 +10,7 @@ import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { C } from './theme';
 
 export type IconProps = { color?: string };
-export type TabKey = 'dashboard' | 'tours' | 'plan' | 'bookings' | 'documents' | 'messages' | 'notifications' | 'account';
+export type TabKey = 'dashboard' | 'tours' | 'bookings' | 'documents' | 'messages' | 'notifications' | 'account';
 
 const GridIcon = ({ color = C.brownMid }: IconProps) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
@@ -25,12 +25,6 @@ const MapIcon = ({ color = C.brownMid }: IconProps) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
     <Path d="M9 4L3 6.5v13L9 17l6 3 6-2.5v-13L15 7 9 4z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
     <Path d="M9 4v13M15 7v13" stroke={color} strokeWidth={1.8} />
-  </Svg>
-);
-
-const PlanIcon = ({ color = C.brownMid }: IconProps) => (
-  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-    <Path d="M21 3L3 10.5l7 2.5 2.5 7L21 3z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
   </Svg>
 );
 
@@ -81,7 +75,6 @@ export const BOTTOM_NAV_TABS: NavTabDef[] = [
 /** Shown in the sidebar's Main Menu. */
 export const SIDEBAR_NAV_TABS: NavTabDef[] = [
   { key: 'tours',         label: 'Tours',         Icon: MapIcon },
-  { key: 'plan',          label: 'Plan a Trip',   Icon: PlanIcon },
   { key: 'bookings',      label: 'My Bookings',   Icon: BagIcon },
   { key: 'documents',     label: 'Documents',     Icon: DocumentIcon },
   { key: 'notifications', label: 'Notifications', Icon: BellIcon },
@@ -89,7 +82,6 @@ export const SIDEBAR_NAV_TABS: NavTabDef[] = [
 
 export const TAB_META: Record<Exclude<TabKey, 'dashboard' | 'account'>, { emoji: string; label: string }> = {
   tours:         { emoji: '🗺️', label: 'Tours' },
-  plan:          { emoji: '✈️', label: 'Plan a Trip' },
   bookings:      { emoji: '🧳', label: 'My Bookings' },
   documents:     { emoji: '📄', label: 'Documents' },
   messages:      { emoji: '✉️', label: 'Messages' },

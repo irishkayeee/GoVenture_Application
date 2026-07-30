@@ -1,15 +1,15 @@
 /**
  * MyBookingsScreen.tsx
- * Client "My Bookings" tab — search + status filter tabs, a sort toggle, a
- * list/grid view toggle, booking cards, a lightweight "Choose a Tour"
- * prompt, and a booking detail modal with a Download Documents action
- * (shared as a text summary since there's no real document backend yet).
+ * Client "My Bookings" tab — search + status filter dropdown, a sort toggle,
+ * booking cards, a lightweight "Choose a Tour" prompt, and a booking detail
+ * modal with a "View Documents" action that jumps straight into that
+ * booking's entry in the Documents tab (via onViewDocuments).
  */
 
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Share, Image,
-  StyleSheet, Platform, useWindowDimensions, ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Image,
+  StyleSheet, Platform, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,7 +19,6 @@ import { C } from '../theme';
 import ClientPageHero from '../ClientPageHero';
 import { useBookings, Booking, BookingStatus } from './BookingsContext';
 
-const WIDE_BREAKPOINT = 900;
 const GRADIENT = ['#3B1A0C', '#C46B1A'] as const;
 const STATUS_FILTERS: ('All' | BookingStatus)[] = ['All', 'Upcoming', 'Ongoing', 'Completed', 'Cancelled'];
 
@@ -35,14 +34,9 @@ const SortIcon = () => (
     <Path d="M7 4v16M7 4l-3 3M7 4l3 3M17 20V4M17 20l-3-3M17 20l3-3" stroke={C.brown} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
-const ListIcon = ({ active }: { active: boolean }) => (
-  <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
-    <Path d="M4 6h16M4 12h16M4 18h16" stroke={active ? C.brown : C.brownMid} strokeWidth={2} strokeLinecap="round" />
-  </Svg>
-);
-const GridIconSvg = ({ active }: { active: boolean }) => (
-  <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
-    <Path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" stroke={active ? C.brown : C.brownMid} strokeWidth={1.8} strokeLinejoin="round" />
+const ChevronIcon = ({ open }: { open: boolean }) => (
+  <Svg width={10} height={10} viewBox="0 0 24 24" style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}>
+    <Path fill={C.brown} d="M12 16L4 8h16z" />
   </Svg>
 );
 const DotsIcon = () => (
@@ -67,11 +61,6 @@ const PersonIcon = () => (
   <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
     <Circle cx={12} cy={8} r={3.4} stroke={C.amber} strokeWidth={2} />
     <Path d="M5 20c0-3.6 3.1-6.5 7-6.5s7 2.9 7 6.5" stroke={C.amber} strokeWidth={2} strokeLinecap="round" />
-  </Svg>
-);
-const CloseIcon = () => (
-  <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
-    <Path d="M6 6l12 12M18 6L6 18" stroke={C.brown} strokeWidth={2.4} strokeLinecap="round" />
   </Svg>
 );
 const CloseWhiteIcon = () => (
@@ -168,31 +157,6 @@ function BookingRow({ booking, onViewDetails, onCancel, menuOpenId, setMenuOpenI
 }
 
 /* ── Booking card (grid layout) ── */
-function BookingGridCard({ booking, onViewDetails }: { booking: Booking; onViewDetails: () => void }) {
-  return (
-    <View style={g.card}>
-      <View style={g.banner}>
-        {booking.imageUrl ? (
-          <Image source={{ uri: booking.imageUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        ) : (
-          <Text style={{ fontSize: 30 }}>🌏</Text>
-        )}
-        <View style={[r.statusPill, g.statusPill, { backgroundColor: statusColor(booking.status) }]}>
-          <Text style={r.statusPillText}>{booking.status}</Text>
-        </View>
-      </View>
-      <View style={{ padding: 12 }}>
-        <Text style={r.dest} numberOfLines={1}>{booking.destination}</Text>
-        <Text style={g.metaText}>{formatRange(booking.dateFrom, booking.dateTo)}</Text>
-        <Text style={g.metaText}>{booking.travelers} {booking.travelers === 1 ? 'Adult' : 'Adults'} · {money(booking.totalAmount)}</Text>
-        <TouchableOpacity style={r.detailsBtn} activeOpacity={0.85} onPress={onViewDetails}>
-          <Text style={r.detailsBtnText}>View Details</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
 /* ── Choose a Tour modal ── */
 function ChooseTourModal({ visible, onClose, onBrowseTours }: { visible: boolean; onClose: () => void; onBrowseTours: () => void }) {
   return (
@@ -293,7 +257,9 @@ function RateTourModal({ visible, onClose, onSubmit }: { visible: boolean; onClo
   );
 }
 
-function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onClose: () => void }) {
+function BookingDetailModal({ booking, onClose, onViewDocuments }: {
+  booking: Booking | null; onClose: () => void; onViewDocuments: (bookingId: string) => void;
+}) {
   const insets = useSafeAreaInsets();
   const { submitReview } = useBookings();
   const [rateModalVisible, setRateModalVisible] = useState(false);
@@ -304,24 +270,9 @@ function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onC
     if (result.ok) setRateModalVisible(false);
   };
 
-  const downloadDocuments = async () => {
-    const summary = [
-      'GoVenture Travel and Tours — Booking Confirmation',
-      `Booking ID: ${booking.id}`,
-      `Destination: ${booking.destination}`,
-      `Travel Dates: ${formatRange(booking.dateFrom, booking.dateTo)}`,
-      `Travelers: ${booking.travelers}`,
-      `Booked On: ${formatShort(booking.bookedOn)}`,
-      `Total Amount: ${money(booking.totalAmount)}`,
-      `Balance Due: ${money(booking.balanceDue)}`,
-      `Payment Method: ${booking.paymentMethod}`,
-      `Payment Status: ${booking.paymentStatus}`,
-    ].join('\n');
-    try {
-      await Share.share({ message: summary, title: `Booking ${booking.id}` });
-    } catch {
-      // sharing cancelled or unsupported — nothing to do
-    }
+  const handleViewDocuments = () => {
+    onClose();
+    onViewDocuments(booking.id);
   };
 
   return (
@@ -330,10 +281,6 @@ function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onC
       <View style={dt.overlay}>
         <View style={[dt.card, { maxHeight: '90%' }]}>
           <LinearGradient colors={GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={dt.header}>
-            <TouchableOpacity style={dt.closeBtn} activeOpacity={0.85} onPress={onClose}>
-              <CloseIcon />
-              <Text style={dt.closeBtnText}>Close</Text>
-            </TouchableOpacity>
             <Text style={dt.headerEyebrow}>Booking #{booking.id}</Text>
             <Text style={dt.headerTitle}>{booking.destination}</Text>
             <View style={[dt.statusPill, { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
@@ -375,9 +322,9 @@ function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onC
             <TouchableOpacity style={dt.footerCloseBtn} activeOpacity={0.85} onPress={onClose}>
               <Text style={dt.footerCloseText}>Close</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={dt.footerDownloadBtn} activeOpacity={0.85} onPress={downloadDocuments}>
+            <TouchableOpacity style={dt.footerDownloadBtn} activeOpacity={0.85} onPress={handleViewDocuments}>
               <DocIcon />
-              <Text style={dt.footerDownloadText}>Download Documents</Text>
+              <Text style={dt.footerDownloadText}>View Documents</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -389,15 +336,44 @@ function BookingDetailModal({ booking, onClose }: { booking: Booking | null; onC
   );
 }
 
-export default function MyBookingsScreen({ onBrowseTours }: { onBrowseTours: () => void }) {
-  const { width } = useWindowDimensions();
-  const isWide = width >= WIDE_BREAKPOINT;
+function FilterDropdown({ value, onChange }: { value: 'All' | BookingStatus; onChange: (v: 'All' | BookingStatus) => void }) {
+  const [open, setOpen] = useState(false);
+  const activeLabel = value === 'All' ? 'All Bookings' : value;
+  return (
+    <View style={{ position: 'relative', zIndex: 10, flexShrink: 1 }}>
+      <TouchableOpacity style={fd.trigger} activeOpacity={0.8} onPress={() => setOpen((v) => !v)}>
+        <Text style={fd.triggerText} numberOfLines={1}>{activeLabel}</Text>
+        <ChevronIcon open={open} />
+      </TouchableOpacity>
+      {open && (
+        <View style={fd.menu}>
+          {STATUS_FILTERS.map((f) => {
+            const active = f === value;
+            return (
+              <TouchableOpacity
+                key={f}
+                style={fd.menuItem}
+                activeOpacity={0.75}
+                onPress={() => { onChange(f); setOpen(false); }}
+              >
+                <Text style={[fd.menuItemText, active && fd.menuItemTextActive]}>{f === 'All' ? 'All Bookings' : f}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+type MyBookingsScreenProps = { onBrowseTours: () => void; onViewDocuments: (bookingId: string) => void };
+
+export default function MyBookingsScreen({ onBrowseTours, onViewDocuments }: MyBookingsScreenProps) {
   const { bookings, loading, error, refresh, cancelBooking } = useBookings();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | BookingStatus>('All');
   const [sortDesc, setSortDesc] = useState(true);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [chooseTourVisible, setChooseTourVisible] = useState(false);
   const [detailBooking, setDetailBooking] = useState<Booking | null>(null);
@@ -416,9 +392,6 @@ export default function MyBookingsScreen({ onBrowseTours }: { onBrowseTours: () 
     return list;
   }, [bookings, statusFilter, search, sortDesc]);
 
-  const columns = isWide ? 3 : (width >= 620 ? 2 : 1);
-  const gridCardWidth = columns === 1 ? '100%' : columns === 2 ? '48.5%' : '32%';
-
   return (
     <View style={{ flex: 1 }}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -436,17 +409,7 @@ export default function MyBookingsScreen({ onBrowseTours }: { onBrowseTours: () 
         </View>
 
         <View style={sb.controlsRow}>
-          <View style={sb.filterTabs}>
-            {STATUS_FILTERS.map((f) => {
-              const active = statusFilter === f;
-              return (
-                <TouchableOpacity key={f} style={[sb.filterTab, active && sb.filterTabActive]} activeOpacity={0.8} onPress={() => setStatusFilter(f)}>
-                  <Text style={[sb.filterTabText, active && sb.filterTabTextActive]}>{f === 'All' ? 'All Bookings' : f}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
+          <FilterDropdown value={statusFilter} onChange={setStatusFilter} />
           <View style={sb.rightControls}>
             <TouchableOpacity style={sb.bookTourBtn} activeOpacity={0.85} onPress={() => setChooseTourVisible(true)}>
               <Text style={sb.bookTourBtnText}>+ Book a Tour</Text>
@@ -455,14 +418,6 @@ export default function MyBookingsScreen({ onBrowseTours }: { onBrowseTours: () 
               <SortIcon />
               <Text style={sb.sortBtnText}>Sort: by date</Text>
             </TouchableOpacity>
-            <View style={sb.viewToggle}>
-              <TouchableOpacity style={[sb.viewToggleBtn, viewMode === 'list' && sb.viewToggleBtnActive]} onPress={() => setViewMode('list')}>
-                <ListIcon active={viewMode === 'list'} />
-              </TouchableOpacity>
-              <TouchableOpacity style={[sb.viewToggleBtn, viewMode === 'grid' && sb.viewToggleBtnActive]} onPress={() => setViewMode('grid')}>
-                <GridIconSvg active={viewMode === 'grid'} />
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
 
@@ -483,7 +438,7 @@ export default function MyBookingsScreen({ onBrowseTours }: { onBrowseTours: () 
               <Text style={sb.emptyTitle}>No bookings found</Text>
               <Text style={sb.emptyText}>Try a different filter or search term.</Text>
             </View>
-          ) : viewMode === 'list' ? (
+          ) : (
             <View style={{ gap: 14 }}>
               {filtered.map((b) => (
                 <BookingRow
@@ -494,14 +449,6 @@ export default function MyBookingsScreen({ onBrowseTours }: { onBrowseTours: () 
                   menuOpenId={menuOpenId}
                   setMenuOpenId={setMenuOpenId}
                 />
-              ))}
-            </View>
-          ) : (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: '3%', rowGap: 14 }}>
-              {filtered.map((b) => (
-                <View key={b.id} style={{ width: gridCardWidth }}>
-                  <BookingGridCard booking={b} onViewDetails={() => setDetailBooking(b)} />
-                </View>
               ))}
             </View>
           )}
@@ -515,7 +462,7 @@ export default function MyBookingsScreen({ onBrowseTours }: { onBrowseTours: () 
         onClose={() => setChooseTourVisible(false)}
         onBrowseTours={() => { setChooseTourVisible(false); onBrowseTours(); }}
       />
-      <BookingDetailModal booking={detailBooking} onClose={() => setDetailBooking(null)} />
+      <BookingDetailModal booking={detailBooking} onClose={() => setDetailBooking(null)} onViewDocuments={onViewDocuments} />
     </View>
   );
 }
@@ -531,13 +478,8 @@ const sb = StyleSheet.create({
 
   controlsRow: {
     flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
-    gap: 10, paddingHorizontal: 16, marginTop: 12,
+    gap: 10, paddingHorizontal: 16, marginTop: 12, zIndex: 10, elevation: 10,
   },
-  filterTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  filterTab: { borderWidth: 1, borderColor: C.divider, backgroundColor: C.cardBg, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 },
-  filterTabActive: { backgroundColor: C.bg, borderColor: C.amber },
-  filterTabText: { fontSize: 11.5, fontWeight: '700', color: C.brownMid },
-  filterTabTextActive: { color: C.brown, fontWeight: '900' },
 
   rightControls: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   bookTourBtn: { backgroundColor: C.danger, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
@@ -548,13 +490,32 @@ const sb = StyleSheet.create({
     borderRadius: 20, paddingHorizontal: 12, paddingVertical: 9,
   },
   sortBtnText: { fontSize: 11, fontWeight: '700', color: C.brown },
-  viewToggle: { flexDirection: 'row', borderWidth: 1, borderColor: C.divider, borderRadius: 10, overflow: 'hidden' },
-  viewToggleBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: C.cardBg },
-  viewToggleBtnActive: { backgroundColor: C.bg },
 
   emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 6 },
   emptyTitle: { fontSize: 14, fontWeight: '900', color: C.brown },
   emptyText: { fontSize: 12, color: C.brownMid },
+});
+
+const fd = StyleSheet.create({
+  trigger: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+    alignSelf: 'flex-start', minWidth: 0, flexShrink: 1,
+    borderWidth: 1, borderColor: C.divider, backgroundColor: C.cardBg, borderRadius: 12,
+    paddingHorizontal: 11, paddingVertical: 9,
+  },
+  triggerText: { fontSize: 11, fontWeight: '800', color: C.brown, flexShrink: 1 },
+  menu: {
+    position: 'absolute', top: 40, left: 0, minWidth: 180,
+    backgroundColor: C.cardBg, borderRadius: 12, borderWidth: 1, borderColor: C.divider,
+    paddingVertical: 4,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+      android: { elevation: 8 },
+    }),
+  },
+  menuItem: { paddingHorizontal: 14, paddingVertical: 11 },
+  menuItemText: { fontSize: 12, fontWeight: '700', color: C.brownMid },
+  menuItemTextActive: { color: C.brown, fontWeight: '900' },
 });
 
 const r = StyleSheet.create({
@@ -587,15 +548,8 @@ const r = StyleSheet.create({
   smallText: { fontSize: 11, color: C.brownMid, marginTop: 6 },
   smallTextBold: { fontWeight: '800', color: C.brown },
 
-  detailsBtn: { backgroundColor: C.brown, borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 10, alignSelf: 'flex-start', paddingHorizontal: 18 },
+  detailsBtn: { backgroundColor: C.brown, borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 10, alignSelf: 'flex-end', paddingHorizontal: 18 },
   detailsBtnText: { fontSize: 11.5, fontWeight: '800', color: '#FFFFFF' },
-});
-
-const g = StyleSheet.create({
-  card: { backgroundColor: C.cardBg, borderRadius: 14, borderWidth: 1, borderColor: C.divider, overflow: 'hidden' },
-  banner: { height: 90, backgroundColor: C.brown, alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  statusPill: { position: 'absolute', top: 8, left: 8 },
-  metaText: { fontSize: 10.5, color: C.brownMid, marginTop: 4 },
 });
 
 const ct = StyleSheet.create({
@@ -621,12 +575,7 @@ const df = StyleSheet.create({
 const dt = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(59,26,12,0.45)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   card: { width: '100%', maxWidth: 460, backgroundColor: C.cardBg, borderRadius: 20, overflow: 'hidden' },
-  header: { padding: 18, paddingTop: 16 },
-  closeBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end',
-    backgroundColor: '#FFFFFF', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 10,
-  },
-  closeBtnText: { fontSize: 11, fontWeight: '800', color: C.brown },
+  header: { padding: 18, paddingTop: 22 },
   headerEyebrow: { fontSize: 10.5, color: 'rgba(255,255,255,0.8)', fontWeight: '700' },
   headerTitle: { fontSize: 20, fontWeight: '900', color: '#FFFFFF', marginTop: 2 },
   statusPill: { alignSelf: 'flex-start', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8 },
