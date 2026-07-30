@@ -5,9 +5,10 @@
  *   Payment / Documents status badges (client_documents_overview).
  *   Screen 2: full document detail for one booking — a Travel Readiness
  *   ring, summary cards, and three expandable sections (Traveler Documents,
- *   backed by the real per-file checklist + upload/remove; Agency Documents
- *   and Travel Documents, whose availability is computed live from the
- *   booking's real status/payment fields, not stored anywhere).
+ *   showing the account's own Passport/Government ID from Edit Profile >
+ *   Travel Documents; Agency Documents and Travel Documents, whose
+ *   availability is computed live from the booking's real status/payment
+ *   fields, not stored anywhere).
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -15,8 +16,8 @@ import {
   View, Text, TouchableOpacity, ScrollView, Modal, Image,
   StyleSheet, ActivityIndicator, Alert, Platform,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { WebView } from 'react-native-webview';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C } from '../theme';
@@ -25,13 +26,12 @@ import { useAuth } from '@/components/auth/AuthContext';
 import { downloadReceiptPdf, downloadImageFromUrl } from '../tours/downloadReceipt';
 import { buildDocumentContent } from './documentContent';
 import {
-  RequiredDocument, DocumentStatus, DocumentsOverview,
+  DocumentStatus, DocumentsOverview,
   AgencyDocument, TravelDocument, BookingStatus, PaymentStatus, TravelerDocsStatus,
   AGENCY_DOC_DESCRIPTIONS, TRAVEL_DOC_DESCRIPTIONS,
 } from './mockData';
 import {
-  CLIENT_DOCUMENTS_OVERVIEW_API_URL, CLIENT_DOCUMENTS_LIST_API_URL,
-  DOCUMENT_UPLOAD_API_URL, DOCUMENT_REMOVE_API_URL, CLIENT_ACCOUNT_GET_API_URL,
+  CLIENT_DOCUMENTS_OVERVIEW_API_URL, CLIENT_ACCOUNT_GET_API_URL,
 } from '@/constants/api';
 
 /* ── Icons (solid-style, no emoji) ── */
@@ -62,11 +62,6 @@ const ChevronIcon = ({ open, color = C.brown, size = 10 }: { open: boolean; colo
     <Path fill={color} d="M12 16L4 8h16z" />
   </Svg>
 );
-const ChevronSmallIcon = ({ color = C.brownMid, size = 9 }: { color?: string; size?: number }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24">
-    <Path fill={color} d="M8 5l8 7-8 7z" />
-  </Svg>
-);
 const ArrowRightIcon = ({ color = C.amber, size = 10 }: { color?: string; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path fill={color} d="M4 11h13.2l-4.6-4.6L14 5l7 7-7 7-1.4-1.4L17.2 13H4z" />
@@ -81,11 +76,6 @@ const CheckCircleIcon = ({ color = C.success, size = 14 }: { color?: string; siz
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Circle cx={12} cy={12} r={10} fill={color} />
     <Path d="M7 12.5l3 3 7-7" stroke="#FFFFFF" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-  </Svg>
-);
-const PlusIcon = ({ color = '#FFFFFF', size = 11 }: { color?: string; size?: number }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24">
-    <Path fill={color} d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z" />
   </Svg>
 );
 const DownloadIcon = ({ color = C.brown, size = 13 }: { color?: string; size?: number }) => (
@@ -331,140 +321,6 @@ const rw = StyleSheet.create({
   dependLink: { fontSize: 10.5, fontWeight: '700', color: C.amber },
 });
 
-/* ── Traveler Documents: itemized checklist (Government ID + Passport), with real upload/remove ── */
-function TravelerChecklist({ bookingId, onChanged }: { bookingId: string; onChanged: () => void }) {
-  const { user } = useAuth();
-  const [documents, setDocuments] = useState<RequiredDocument[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busyDocId, setBusyDocId] = useState<string | null>(null);
-  const [openInstructions, setOpenInstructions] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user) return;
-    setLoading(true);
-    fetch(`${CLIENT_DOCUMENTS_LIST_API_URL}&userId=${user.id}&bookingId=${bookingId}`)
-      .then((res) => res.json())
-      .then((result) => { if (result.status === 'success') setDocuments(result.data); })
-      .finally(() => setLoading(false));
-  }, [user, bookingId]);
-
-  const handleUpload = async (docId: string) => {
-    if (!user) return;
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow photo library access to upload a document.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6, base64: true });
-    if (result.canceled || !result.assets?.[0]?.base64) return;
-    const asset = result.assets[0];
-    const mimeType = asset.mimeType ?? 'image/jpeg';
-
-    setBusyDocId(docId);
-    try {
-      const res = await fetch(DOCUMENT_UPLOAD_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, bookingId, docType: docId, fileDataUri: `data:${mimeType};base64,${asset.base64}` }),
-      });
-      const uploadResult = await res.json();
-      if (uploadResult.status !== 'success') {
-        Alert.alert('Upload failed', uploadResult.message || 'Please try again.');
-        return;
-      }
-      setDocuments((prev) => prev.map((d) => (d.id === docId ? { ...d, status: uploadResult.data.status, fileName: uploadResult.data.fileName, adminComment: null } : d)));
-      onChanged();
-    } catch {
-      Alert.alert('Upload failed', 'Please check your connection and try again.');
-    } finally {
-      setBusyDocId(null);
-    }
-  };
-
-  const handleRemove = async (docId: string) => {
-    if (!user) return;
-    setBusyDocId(docId);
-    try {
-      const res = await fetch(DOCUMENT_REMOVE_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, bookingId, docType: docId }),
-      });
-      const result = await res.json();
-      if (result.status !== 'success') return;
-      setDocuments((prev) => prev.map((d) => (d.id === docId ? { ...d, status: 'Pending Upload', fileName: null, adminComment: null } : d)));
-      onChanged();
-    } finally {
-      setBusyDocId(null);
-    }
-  };
-
-  if (loading) return <ActivityIndicator color={C.amber} style={{ marginVertical: 12 }} />;
-
-  return (
-    <View style={{ gap: 10 }}>
-      {documents.map((doc) => {
-        const Icon = DOC_TYPE_ICON[doc.id] ?? IdCardDocIcon;
-        const style = REQUIRED_DOC_STYLE[doc.status];
-        const approved = doc.status === 'Approved';
-        const needsReupload = doc.status === 'Rejected' || doc.status === 'Reupload Requested';
-        const submitted = doc.status === 'Submitted' || approved;
-        const busy = busyDocId === doc.id;
-        return (
-          <View key={doc.id} style={tc.card}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-              <View style={[tc.iconBox, { backgroundColor: style.color + '1A' }]}><Icon color={style.color} /></View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={tc.title}>{doc.title}</Text>
-                <Text style={tc.desc}>{doc.description}</Text>
-              </View>
-              <StatusBadge label={doc.status} style={style} />
-            </View>
-
-            {needsReupload && !!doc.adminComment && (
-              <View style={tc.commentBox}>
-                <Text style={tc.commentLabel}>Reviewer note</Text>
-                <Text style={tc.commentText}>{doc.adminComment}</Text>
-              </View>
-            )}
-
-            <TouchableOpacity style={tc.instructionsRow} activeOpacity={0.75} onPress={() => setOpenInstructions((v) => (v === doc.id ? null : doc.id))}>
-              <Text style={tc.instructionsLabel}>Upload Instructions</Text>
-              <ChevronSmallIcon color={C.amber} />
-            </TouchableOpacity>
-            {openInstructions === doc.id && <Text style={tc.instructionsText}>{doc.instructions}</Text>}
-
-            <View style={tc.footerRow}>
-              <Text style={tc.fileText} numberOfLines={1}>{doc.fileName ?? 'No file uploaded yet'}</Text>
-              <TouchableOpacity
-                style={[tc.actionBtn, submitted && tc.actionBtnDone, needsReupload && tc.actionBtnReupload, busy && { opacity: 0.6 }]}
-                activeOpacity={0.85}
-                onPress={approved ? undefined : submitted ? () => handleRemove(doc.id) : () => handleUpload(doc.id)}
-                disabled={busy || approved}
-              >
-                {busy ? (
-                  <ActivityIndicator size="small" color={submitted ? '#12946F' : '#FFFFFF'} />
-                ) : needsReupload ? (
-                  <Text style={tc.actionBtnTextReupload}>Re-upload</Text>
-                ) : submitted ? (
-                  <>
-                    <CheckCircleIcon size={12} />
-                    <Text style={tc.actionBtnTextDone}>Uploaded</Text>
-                  </>
-                ) : (
-                  <>
-                    <PlusIcon />
-                    <Text style={tc.actionBtnText}>Upload</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
 const tc = StyleSheet.create({
   card: { backgroundColor: C.lightBg, borderRadius: 12, borderWidth: 1, borderColor: C.divider, padding: 12, gap: 8 },
   iconBox: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -596,10 +452,11 @@ function DocumentPreviewModal({ visible, content, onClose, onDownload, downloadi
   onDownload: () => void;
   downloading: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <View style={pv.safe}>
-        <View style={pv.header}>
+        <View style={[pv.header, { paddingTop: insets.top + 12 }]}>
           <TouchableOpacity style={pv.backBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <BackIcon />
           </TouchableOpacity>
@@ -661,10 +518,11 @@ const pv = StyleSheet.create({
 function ImageDocPreviewModal({ visible, title, imageUrl, onClose, onDownload, downloading }: {
   visible: boolean; title: string; imageUrl: string | null; onClose: () => void; onDownload: () => void; downloading: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <View style={pv.safe}>
-        <View style={pv.header}>
+        <View style={[pv.header, { paddingTop: insets.top + 12 }]}>
           <TouchableOpacity style={pv.backBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <BackIcon />
           </TouchableOpacity>
@@ -804,8 +662,8 @@ const aid = StyleSheet.create({
 });
 
 /* ══════════════════════════ Screen 2: Document Detail ══════════════════════════ */
-function DocumentDetailScreen({ overview, onBack, onRefresh, onGoToEditProfile }: {
-  overview: DocumentsOverview; onBack: () => void; onRefresh: () => void; onGoToEditProfile?: () => void;
+function DocumentDetailScreen({ overview, onBack, onGoToEditProfile }: {
+  overview: DocumentsOverview; onBack: () => void; onGoToEditProfile?: () => void;
 }) {
   const { user } = useAuth();
   const [travelerOpen, setTravelerOpen] = useState(true);
@@ -909,9 +767,7 @@ function DocumentDetailScreen({ overview, onBack, onRefresh, onGoToEditProfile }
                 <View style={tr.ownerTag}><Text style={tr.ownerTagText}>BOOKING OWNER</Text></View>
               </View>
             </View>
-            <StatusBadge label={overview.travelerDocsStatus} style={TRAVELER_DOCS_STYLE[overview.travelerDocsStatus]} />
           </View>
-          <TravelerChecklist bookingId={overview.id} onChanged={onRefresh} />
           {user && <AccountIdentityDocs userId={user.id} onGoToEditProfile={onGoToEditProfile} />}
         </Section>
 
@@ -1068,7 +924,6 @@ export default function DocumentsScreen({ initialBookingId, onConsumedInitialBoo
       <DocumentDetailScreen
         overview={selected}
         onBack={() => setSelectedId(null)}
-        onRefresh={load}
         onGoToEditProfile={onGoToEditProfile}
       />
     );
