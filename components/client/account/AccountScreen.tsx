@@ -5,7 +5,7 @@
  * Logging out is handled from the sidebar, not this page.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, Modal, StyleSheet, Platform } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
@@ -74,12 +74,30 @@ function HelpSupportModal({ visible, onClose }: { visible: boolean; onClose: () 
   );
 }
 
-type Props = { name?: string; email?: string };
+type Props = {
+  name?: string;
+  email?: string;
+  /** True right after arriving here via a "Add in Account…" link elsewhere (e.g. Documents' missing Passport/ID) — opens Edit Profile straight to Travel Documents. */
+  autoOpenEditProfile?: boolean;
+  onConsumedAutoOpenEditProfile?: () => void;
+};
 
-export default function AccountScreen({ name = 'Jared Abellera', email = 'jared.abellera@email.com' }: Props) {
+export default function AccountScreen({
+  name = 'Jared Abellera', email = 'jared.abellera@email.com',
+  autoOpenEditProfile, onConsumedAutoOpenEditProfile,
+}: Props) {
   const { user } = useAuth();
   const [editVisible, setEditVisible] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false);
+  const [editFocusSection, setEditFocusSection] = useState<'travelDocuments' | null>(null);
+
+  useEffect(() => {
+    if (!autoOpenEditProfile) return;
+    setEditFocusSection('travelDocuments');
+    setEditVisible(true);
+    onConsumedAutoOpenEditProfile?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenEditProfile]);
 
   const displayName = user?.fullName ?? name;
   const displayEmail = user?.email ?? email;
@@ -121,7 +139,12 @@ export default function AccountScreen({ name = 'Jared Abellera', email = 'jared.
 
       <Copyright />
 
-      <EditProfileModal visible={editVisible} userId={user?.id} onClose={() => setEditVisible(false)} />
+      <EditProfileModal
+        visible={editVisible}
+        userId={user?.id}
+        focusSection={editFocusSection}
+        onClose={() => { setEditVisible(false); setEditFocusSection(null); }}
+      />
       <HelpSupportModal visible={helpVisible} onClose={() => setHelpVisible(false)} />
     </ScrollView>
   );

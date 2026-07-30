@@ -2,7 +2,7 @@
  * client-dashboard.tsx
  */
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -105,19 +105,22 @@ export default function ClientDashboard() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [documentsBookingId, setDocumentsBookingId] = useState<string | null>(null);
+  const [autoOpenEditProfile, setAutoOpenEditProfile] = useState(false);
+
+  const fetchUnreadNotifications = useCallback(() => {
+    if (!user) return;
+    fetch(`${NOTIFICATIONS_UNREAD_COUNT_API_URL}&recipientType=client&recipientId=${user.id}`)
+      .then((res) => res.json())
+      .then((result) => { if (result.status === 'success') setUnreadNotifications(result.data.unreadCount); })
+      .catch(() => {});
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
-    const fetchUnread = () => {
-      fetch(`${NOTIFICATIONS_UNREAD_COUNT_API_URL}&recipientType=client&recipientId=${user.id}`)
-        .then((res) => res.json())
-        .then((result) => { if (result.status === 'success') setUnreadNotifications(result.data.unreadCount); })
-        .catch(() => {});
-    };
-    fetchUnread();
-    const interval = setInterval(fetchUnread, 30000);
+    fetchUnreadNotifications();
+    const interval = setInterval(fetchUnreadNotifications, 30000);
     return () => clearInterval(interval);
-  }, [user, activeTab]);
+  }, [user, activeTab, fetchUnreadNotifications]);
 
   useEffect(() => {
     if (!user) return;
@@ -194,13 +197,23 @@ export default function ClientDashboard() {
             <DocumentsScreen
               initialBookingId={documentsBookingId}
               onConsumedInitialBooking={() => setDocumentsBookingId(null)}
+              onGoToEditProfile={() => { setAutoOpenEditProfile(true); setActiveTab('account'); }}
             />
           ) : activeTab === 'messages' ? (
             <ClientMessagesScreen onNavigate={setActiveTab} />
           ) : activeTab === 'notifications' ? (
-            <ClientNotificationsScreen onNavigate={setActiveTab} />
+            <ClientNotificationsScreen
+              onNavigate={setActiveTab}
+              onViewDocuments={(bookingId) => { setDocumentsBookingId(bookingId); setActiveTab('documents'); }}
+              onUnreadChange={fetchUnreadNotifications}
+            />
           ) : activeTab === 'account' ? (
-            <AccountScreen name={user?.fullName} email={user?.email} />
+            <AccountScreen
+              name={user?.fullName}
+              email={user?.email}
+              autoOpenEditProfile={autoOpenEditProfile}
+              onConsumedAutoOpenEditProfile={() => setAutoOpenEditProfile(false)}
+            />
           ) : (
             <PlaceholderTab tab={activeTab} />
           )}
@@ -235,6 +248,7 @@ export default function ClientDashboard() {
                 onSelect={handleSelect}
                 onClose={closeSidebar}
                 onLogout={handleLogout}
+                insetTop={insets.top}
                 insetBottom={insets.bottom}
                 notificationsBadge={unreadNotifications}
               />

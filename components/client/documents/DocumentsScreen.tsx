@@ -12,15 +12,18 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView,
+  View, Text, TouchableOpacity, ScrollView, Modal, Image,
   StyleSheet, ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { WebView } from 'react-native-webview';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Copyright from '@/components/Copyright';
 import { C } from '../theme';
 import ClientPageHero from '../ClientPageHero';
 import { useAuth } from '@/components/auth/AuthContext';
+import { downloadReceiptPdf, downloadImageFromUrl } from '../tours/downloadReceipt';
+import { buildDocumentContent } from './documentContent';
 import {
   RequiredDocument, DocumentStatus, DocumentsOverview,
   AgencyDocument, TravelDocument, BookingStatus, PaymentStatus, TravelerDocsStatus,
@@ -28,7 +31,7 @@ import {
 } from './mockData';
 import {
   CLIENT_DOCUMENTS_OVERVIEW_API_URL, CLIENT_DOCUMENTS_LIST_API_URL,
-  DOCUMENT_UPLOAD_API_URL, DOCUMENT_REMOVE_API_URL,
+  DOCUMENT_UPLOAD_API_URL, DOCUMENT_REMOVE_API_URL, CLIENT_ACCOUNT_GET_API_URL,
 } from '@/constants/api';
 
 /* ── Icons (solid-style, no emoji) ── */
@@ -83,6 +86,11 @@ const CheckCircleIcon = ({ color = C.success, size = 14 }: { color?: string; siz
 const PlusIcon = ({ color = '#FFFFFF', size = 11 }: { color?: string; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path fill={color} d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z" />
+  </Svg>
+);
+const DownloadIcon = ({ color = C.brown, size = 13 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path fill={color} d="M12 3a1 1 0 011 1v8.6l2.3-2.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 111.4-1.4l2.3 2.3V4a1 1 0 011-1zM5 19a1 1 0 011-1h12a1 1 0 110 2H6a1 1 0 01-1-1z" />
   </Svg>
 );
 
@@ -261,21 +269,35 @@ const sc = StyleSheet.create({
 });
 
 /* ── A row inside Agency Documents / Travel Documents ── */
-function DocRow({ icon: Icon, title, description, status, dependsOn, tint }: {
+function DocRow({ icon: Icon, title, description, status, dependsOn, tint, onPress, onDownload }: {
   icon: React.FC<{ color?: string; size?: number }>;
   title: string; description: string; status: string; dependsOn: string[]; tint: string;
+  onPress: () => void; onDownload: () => void;
 }) {
   const available = status === 'Available';
   return (
     <View style={rw.row}>
-      <View style={rw.topLine}>
+      <TouchableOpacity style={rw.topLine} activeOpacity={available ? 0.7 : 1} disabled={!available} onPress={onPress}>
         <View style={[rw.iconBox, { backgroundColor: tint + '1A' }]}><Icon color={tint} /></View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={rw.title}>{title}</Text>
           <Text style={rw.desc} numberOfLines={2}>{description}</Text>
+          {available && <Text style={rw.tapHint}>Tap to view</Text>}
         </View>
-        <StatusBadge label={status} style={available ? AVAILABLE_STYLE : WAITING_STYLE} />
-      </View>
+        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+          <StatusBadge label={status} style={available ? AVAILABLE_STYLE : WAITING_STYLE} />
+          {available && (
+            <TouchableOpacity
+              style={[rw.downloadBtn, { borderColor: tint }]}
+              activeOpacity={0.75}
+              onPress={onDownload}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <DownloadIcon color={tint} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </TouchableOpacity>
       {!available && dependsOn.length > 0 && (
         <View style={rw.dependBox}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -299,6 +321,11 @@ const rw = StyleSheet.create({
   iconBox: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   title: { fontSize: 12.5, fontWeight: '800', color: C.brown },
   desc: { fontSize: 10.5, color: C.brownMid, opacity: 0.75, marginTop: 2, lineHeight: 14 },
+  tapHint: { fontSize: 9.5, fontWeight: '800', color: C.amber, marginTop: 4 },
+  downloadBtn: {
+    width: 26, height: 26, borderRadius: 13, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
   dependBox: { backgroundColor: C.lightBg, borderRadius: 10, padding: 10, marginTop: 8 },
   dependLabel: { fontSize: 10, fontWeight: '800', color: C.brownMid },
   dependLink: { fontSize: 10.5, fontWeight: '700', color: C.amber },
@@ -561,13 +588,258 @@ const sd = StyleSheet.create({
   menuItemTextActive: { color: '#12946F', fontWeight: '900' },
 });
 
+/* ── Document preview modal — renders the same HTML that gets turned into the downloaded PDF ── */
+function DocumentPreviewModal({ visible, content, onClose, onDownload, downloading }: {
+  visible: boolean;
+  content: { title: string; html: string } | null;
+  onClose: () => void;
+  onDownload: () => void;
+  downloading: boolean;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={pv.safe}>
+        <View style={pv.header}>
+          <TouchableOpacity style={pv.backBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <BackIcon />
+          </TouchableOpacity>
+          <Text style={pv.headerTitle} numberOfLines={1}>{content?.title ?? 'Document'}</Text>
+          <View style={{ width: 30 }} />
+        </View>
+
+        <View style={{ flex: 1 }}>
+          {content && (
+            <WebView
+              originWhitelist={['*']}
+              source={{ html: content.html }}
+              style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+            />
+          )}
+        </View>
+
+        <View style={pv.footer}>
+          <TouchableOpacity
+            style={[pv.downloadBtn, downloading && { opacity: 0.7 }]}
+            activeOpacity={0.85}
+            onPress={onDownload}
+            disabled={downloading}
+          >
+            {downloading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <DownloadIcon color="#FFFFFF" size={14} />
+                <Text style={pv.downloadBtnText}>Download</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+const pv = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.lightBg },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: C.divider, backgroundColor: C.cardBg,
+  },
+  backBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 14.5, fontWeight: '900', color: C.brown, flex: 1, textAlign: 'center' },
+  footer: {
+    padding: 14, borderTopWidth: 1, borderTopColor: C.divider, backgroundColor: C.cardBg,
+  },
+  downloadBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: C.amber, borderRadius: 14, paddingVertical: 14,
+  },
+  downloadBtnText: { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
+});
+
+/* ── Full-screen viewer for a real passport/ID scan (image, not generated HTML) ── */
+function ImageDocPreviewModal({ visible, title, imageUrl, onClose, onDownload, downloading }: {
+  visible: boolean; title: string; imageUrl: string | null; onClose: () => void; onDownload: () => void; downloading: boolean;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={pv.safe}>
+        <View style={pv.header}>
+          <TouchableOpacity style={pv.backBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <BackIcon />
+          </TouchableOpacity>
+          <Text style={pv.headerTitle} numberOfLines={1}>{title}</Text>
+          <View style={{ width: 30 }} />
+        </View>
+
+        <View style={{ flex: 1, backgroundColor: '#000000' }}>
+          {imageUrl && <Image source={{ uri: imageUrl }} style={{ flex: 1 }} resizeMode="contain" />}
+        </View>
+
+        <View style={pv.footer}>
+          <TouchableOpacity
+            style={[pv.downloadBtn, downloading && { opacity: 0.7 }]}
+            activeOpacity={0.85}
+            onPress={onDownload}
+            disabled={downloading}
+          >
+            {downloading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <DownloadIcon color="#FFFFFF" size={14} />
+                <Text style={pv.downloadBtnText}>Download</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/**
+ * Traveler Documents: the user's account-level Passport / Government ID
+ * (uploaded via Account > Edit Profile > Travel Documents). Fetched straight
+ * from client_account_get — the exact same endpoint Edit Profile reads and
+ * writes — so this is always the same live record, never a separate copy.
+ */
+type AccountIdentityDoc = { key: 'passport' | 'valid-id'; title: string; imageUrl: string | null };
+
+function AccountIdentityDocs({ userId, onGoToEditProfile }: { userId: string; onGoToEditProfile?: () => void }) {
+  const [passportUrl, setPassportUrl] = useState<string | null>(null);
+  const [validIdUrl, setValidIdUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [preview, setPreview] = useState<AccountIdentityDoc | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${CLIENT_ACCOUNT_GET_API_URL}&userId=${userId}`)
+      .then((res) => res.json())
+      .then((result) => {
+        if (result.status === 'success') {
+          setPassportUrl(result.data.passportImageUrl ?? null);
+          setValidIdUrl(result.data.validIdImageUrl ?? null);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  const handleDownload = async (doc: AccountIdentityDoc) => {
+    if (!doc.imageUrl) return;
+    setDownloading(true);
+    try {
+      const result = await downloadImageFromUrl(`GoVenture-${doc.title.replace(/\s+/g, '-')}`, doc.imageUrl);
+      if (!result.ok) Alert.alert('Download failed', result.message);
+      else if (result.silent) Alert.alert('Downloaded', `${doc.title} was saved to your device automatically.`);
+    } catch {
+      Alert.alert('Download failed', 'Something went wrong. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  if (loading) return <ActivityIndicator color={C.amber} style={{ marginVertical: 12 }} />;
+
+  const items: AccountIdentityDoc[] = [
+    { key: 'passport', title: 'Passport', imageUrl: passportUrl },
+    { key: 'valid-id', title: 'Government ID', imageUrl: validIdUrl },
+  ];
+
+  return (
+    <>
+      <Text style={aid.groupLabel}>IDENTITY DOCUMENTS (FROM YOUR ACCOUNT PROFILE)</Text>
+      <View style={{ gap: 10 }}>
+        {items.map((doc) => {
+          const Icon = DOC_TYPE_ICON[doc.key];
+          const uploaded = !!doc.imageUrl;
+          const tint = uploaded ? '#12946F' : C.brownMid;
+          return (
+            <View key={doc.key} style={tc.card}>
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}
+                activeOpacity={uploaded ? 0.7 : 1}
+                disabled={!uploaded}
+                onPress={() => setPreview(doc)}
+              >
+                <View style={[tc.iconBox, { backgroundColor: tint + '1A' }]}>
+                  <Icon color={tint} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={tc.title}>{doc.title}</Text>
+                  <Text style={tc.desc}>{uploaded ? 'Uploaded to your Account profile' : 'Not yet uploaded'}</Text>
+                  {uploaded && <Text style={aid.tapHint}>Tap to view &amp; download</Text>}
+                </View>
+                <StatusBadge label={uploaded ? 'Uploaded' : 'Missing'} style={uploaded ? AVAILABLE_STYLE : REQUIRED_DOC_STYLE['Pending Upload']} />
+              </TouchableOpacity>
+
+              {!uploaded && (
+                <TouchableOpacity style={aid.addLink} activeOpacity={0.75} onPress={onGoToEditProfile}>
+                  <Text style={aid.addLinkText}>Add in Account &gt; Edit Profile &gt; Travel Documents</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })}
+      </View>
+
+      <ImageDocPreviewModal
+        visible={!!preview}
+        title={preview?.title ?? ''}
+        imageUrl={preview?.imageUrl ?? null}
+        onClose={() => setPreview(null)}
+        onDownload={() => preview && handleDownload(preview)}
+        downloading={downloading}
+      />
+    </>
+  );
+}
+const aid = StyleSheet.create({
+  groupLabel: { fontSize: 9.5, fontWeight: '800', color: C.brownMid, opacity: 0.6, letterSpacing: 0.4, marginTop: 6, marginBottom: 2 },
+  tapHint: { fontSize: 9.5, fontWeight: '800', color: C.amber, marginTop: 4 },
+  addLink: { borderTopWidth: 1, borderTopColor: C.divider, marginTop: 8, paddingTop: 8 },
+  addLinkText: { fontSize: 10.5, fontWeight: '800', color: C.amber },
+});
+
 /* ══════════════════════════ Screen 2: Document Detail ══════════════════════════ */
-function DocumentDetailScreen({ overview, onBack, onRefresh }: { overview: DocumentsOverview; onBack: () => void; onRefresh: () => void }) {
+function DocumentDetailScreen({ overview, onBack, onRefresh, onGoToEditProfile }: {
+  overview: DocumentsOverview; onBack: () => void; onRefresh: () => void; onGoToEditProfile?: () => void;
+}) {
+  const { user } = useAuth();
   const [travelerOpen, setTravelerOpen] = useState(true);
   const [agencyOpen, setAgencyOpen] = useState(true);
   const [travelOpen, setTravelOpen] = useState(true);
 
+  const [previewDocType, setPreviewDocType] = useState<string | null>(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
   const percent = overview.travelerDocsTotal === 0 ? 0 : Math.round((overview.travelerDocsApproved / overview.travelerDocsTotal) * 100);
+  const previewContent = previewDocType ? buildDocumentContent(previewDocType, overview) : null;
+
+  const openPreview = (docType: string) => {
+    setPreviewDocType(docType);
+    setPreviewVisible(true);
+  };
+
+  const handleDownload = async (docType: string) => {
+    const content = buildDocumentContent(docType, overview);
+    setDownloading(true);
+    try {
+      const result = await downloadReceiptPdf(`${overview.id}-${docType}`, content.html);
+      if (!result.ok) {
+        Alert.alert('Download failed', result.message);
+      } else if (result.silent) {
+        Alert.alert('Downloaded', `${content.title} was saved to your device automatically.`);
+      }
+    } catch {
+      Alert.alert('Download failed', 'Something went wrong. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -640,6 +912,7 @@ function DocumentDetailScreen({ overview, onBack, onRefresh }: { overview: Docum
             <StatusBadge label={overview.travelerDocsStatus} style={TRAVELER_DOCS_STYLE[overview.travelerDocsStatus]} />
           </View>
           <TravelerChecklist bookingId={overview.id} onChanged={onRefresh} />
+          {user && <AccountIdentityDocs userId={user.id} onGoToEditProfile={onGoToEditProfile} />}
         </Section>
 
         <Section
@@ -657,6 +930,8 @@ function DocumentDetailScreen({ overview, onBack, onRefresh }: { overview: Docum
               status={doc.status}
               dependsOn={doc.dependsOn}
               tint={C.info}
+              onPress={() => openPreview(doc.type)}
+              onDownload={() => handleDownload(doc.type)}
             />
           ))}
         </Section>
@@ -676,12 +951,22 @@ function DocumentDetailScreen({ overview, onBack, onRefresh }: { overview: Docum
               status={doc.status}
               dependsOn={doc.dependsOn}
               tint={C.amber}
+              onPress={() => openPreview(doc.type)}
+              onDownload={() => handleDownload(doc.type)}
             />
           ))}
         </Section>
 
         <Copyright />
       </ScrollView>
+
+      <DocumentPreviewModal
+        visible={previewVisible}
+        content={previewContent}
+        onClose={() => setPreviewVisible(false)}
+        onDownload={() => previewDocType && handleDownload(previewDocType)}
+        downloading={downloading}
+      />
     </View>
   );
 }
@@ -732,9 +1017,11 @@ type Props = {
   initialBookingId?: string | null;
   /** Called once the initial booking id above has been applied, so the caller can clear it and not re-trigger on a later, unrelated visit to this tab. */
   onConsumedInitialBooking?: () => void;
+  /** Sends the user to Account > Edit Profile > Travel Documents, e.g. from the "Add in Account…" link on a missing Passport/Government ID. */
+  onGoToEditProfile?: () => void;
 };
 
-export default function DocumentsScreen({ initialBookingId, onConsumedInitialBooking }: Props) {
+export default function DocumentsScreen({ initialBookingId, onConsumedInitialBooking, onGoToEditProfile }: Props) {
   const { user } = useAuth();
   const [overview, setOverview] = useState<DocumentsOverview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -777,7 +1064,14 @@ export default function DocumentsScreen({ initialBookingId, onConsumedInitialBoo
   const selected = useMemo(() => overview.find((b) => b.id === selectedId) ?? null, [overview, selectedId]);
 
   if (selected) {
-    return <DocumentDetailScreen overview={selected} onBack={() => setSelectedId(null)} onRefresh={load} />;
+    return (
+      <DocumentDetailScreen
+        overview={selected}
+        onBack={() => setSelectedId(null)}
+        onRefresh={load}
+        onGoToEditProfile={onGoToEditProfile}
+      />
+    );
   }
 
   return (

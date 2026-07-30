@@ -37,13 +37,14 @@ type Props = {
   onSelect:    (key: TabKey) => void;
   onClose:     () => void;
   onLogout:    () => void;
+  insetTop:    number;
   insetBottom: number;
   notificationsBadge?: number;
 };
 
-export default function ClientSidebar({ active, onSelect, onClose, onLogout, insetBottom, notificationsBadge = 0 }: Props) {
+export default function ClientSidebar({ active, onSelect, onClose, onLogout, insetTop, insetBottom, notificationsBadge = 0 }: Props) {
   return (
-    <View style={[sb.wrapper, { paddingBottom: 16 + insetBottom }]}>
+    <View style={[sb.wrapper, { paddingTop: 16 + insetTop, paddingBottom: 16 + insetBottom }]}>
       <TouchableOpacity style={sb.closeBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
         <CloseIcon />
       </TouchableOpacity>
@@ -89,7 +90,7 @@ export default function ClientSidebar({ active, onSelect, onClose, onLogout, ins
 const sb = StyleSheet.create({
   wrapper: {
     width: SIDEBAR_W, height: '100%',
-    backgroundColor: C.bg, paddingHorizontal: 14, paddingTop: 16,
+    backgroundColor: C.bg, paddingHorizontal: 14,
     borderRightWidth: 1, borderRightColor: C.divider,
     ...Platform.select({
       ios:     { shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 16, shadowOffset: { width: 6, height: 0 } },

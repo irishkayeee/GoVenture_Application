@@ -58,6 +58,7 @@ export const TRIP_WEATHER_API_URL = `${API_URL}?action=trip_weather`;
 export const CLIENT_ACCOUNT_GET_API_URL = `${API_URL}?action=client_account_get`;
 export const CLIENT_PROFILE_UPDATE_API_URL = `${API_URL}?action=client_profile_update`;
 export const CLIENT_AVATAR_UPDATE_API_URL = `${API_URL}?action=client_avatar_update`;
+export const CLIENT_TRAVEL_DOCUMENTS_UPDATE_API_URL = `${API_URL}?action=client_travel_documents_update`;
 
 // ── Client: Messages ──
 export const CLIENT_CONVERSATIONS_LIST_API_URL = `${API_URL}?action=client_conversations_list`;
