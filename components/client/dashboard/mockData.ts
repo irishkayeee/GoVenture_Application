@@ -25,6 +25,7 @@ export type FavoriteTour = {
   reviews:        number;
   pricePerPerson: string;
   emoji:          string;
+  imageUrl:       string | null;
 };
 
 export type RecommendedTour = {
@@ -32,6 +33,7 @@ export type RecommendedTour = {
   destination:    string;
   pricePerPerson: string;
   emoji:          string;
+  imageUrl:       string | null;
 };
 
 export type UpcomingTrip = {

@@ -7,7 +7,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, Modal,
+  View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Image,
   StyleSheet, Platform, useWindowDimensions, DimensionValue, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -65,6 +65,14 @@ const CheckIcon = () => (
 const FilterIcon = () => (
   <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
     <Path d="M4 6h16M7 12h10M10 18h4" stroke={C.brown} strokeWidth={2} strokeLinecap="round" />
+  </Svg>
+);
+/** Generic travel-photo glyph — shown when a tour has no image, or its image fails to load. */
+const PhotoFallbackIcon = ({ color = 'rgba(255,255,255,0.85)', size = 36 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M4 18l5-6 4 4.5 3-3.5 4 5H4z" fill={color} />
+    <Circle cx={8} cy={7.5} r={2} fill={color} />
+    <Path d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke={color} strokeWidth={1.6} />
   </Svg>
 );
 
@@ -187,10 +195,22 @@ function TourCard({ tour, favorited, onToggleFavorite, onViewDetails, onBookNow,
   onBookNow: () => void;
   width: DimensionValue;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = !!tour.imageUrl && !imageFailed;
+
   return (
     <View style={[tc.card, { width }]}>
       <View style={tc.banner}>
-        <Text style={{ fontSize: 34 }}>{tour.emoji}</Text>
+        {showImage ? (
+          <Image
+            source={{ uri: tour.imageUrl! }}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <PhotoFallbackIcon />
+        )}
         <TouchableOpacity style={tc.heart} activeOpacity={0.8} onPress={onToggleFavorite} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <HeartIcon filled={favorited} />
         </TouchableOpacity>
@@ -813,7 +833,7 @@ const tc = StyleSheet.create({
       android: { elevation: 1 },
     }),
   },
-  banner: { height: 130, backgroundColor: C.brown, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  banner: { width: '100%', aspectRatio: 16 / 9, backgroundColor: C.brown, alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' },
   heart: {
     position: 'absolute', top: 10, right: 10,
     width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.92)',

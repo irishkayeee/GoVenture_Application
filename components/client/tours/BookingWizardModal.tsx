@@ -8,11 +8,11 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  Modal, View, Text, TextInput, TouchableOpacity, ScrollView, Alert,
+  Modal, View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Image,
   StyleSheet, Platform, useWindowDimensions, KeyboardAvoidingView, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { C } from '../theme';
 import { Tour, DepartureOption, SERVICE_FEE } from './mockData';
 import { useBookings } from '../bookings/BookingsContext';
@@ -28,6 +28,19 @@ const CloseIcon = () => (
 const BackIcon = () => (
   <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
     <Path d="M15 19l-7-7 7-7" stroke="#FFFFFF" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+const ChevronDownIcon = ({ open }: { open?: boolean }) => (
+  <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}>
+    <Path d="M6 9l6 6 6-6" stroke={C.brownMid} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+/** Generic travel-photo glyph — shown when the tour has no image, or its image fails to load. */
+const PhotoFallbackIcon = ({ color = 'rgba(255,255,255,0.85)', size = 32 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M4 18l5-6 4 4.5 3-3.5 4 5H4z" fill={color} />
+    <Circle cx={8} cy={7.5} r={2} fill={color} />
+    <Path d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke={color} strokeWidth={1.6} />
   </Svg>
 );
 const CheckIcon = ({ color = '#FFFFFF', size = 14 }: { color?: string; size?: number }) => (
@@ -163,6 +176,8 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
   const [infants, setInfants] = useState(0);
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
+  const [imageFailed, setImageFailed] = useState(false);
+  const [dateMenuOpen, setDateMenuOpen] = useState(false);
 
   const [method, setMethod] = useState<PaymentMethod>('GCash');
   const [refNumber, setRefNumber] = useState('');
@@ -177,7 +192,7 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
     if (!visible || !tour) return;
     setStep(1);
     setFirstName(''); setMiddleName(''); setLastName(''); setContact('');
-    setGender('Female'); setNotes(''); setFormError('');
+    setGender('Female'); setNotes(''); setFormError(''); setDateMenuOpen(false);
     setMethod('GCash'); setRefNumber(''); setProofAttached(false); setPaymentError('');
     const idx = prefill ? tour.departures.findIndex((d) => d.id === prefill.departure.id) : 0;
     setDepartureIdx(idx >= 0 ? idx : 0);
@@ -297,7 +312,18 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
   const tripSummary = (
     <View style={sm.card}>
       <Text style={sm.title}>Trip Summary</Text>
-      <View style={sm.banner}><Text style={{ fontSize: 32 }}>{tour.emoji}</Text></View>
+      <View style={sm.banner}>
+        {tour.imageUrl && !imageFailed ? (
+          <Image
+            source={{ uri: tour.imageUrl }}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <PhotoFallbackIcon />
+        )}
+      </View>
       <Text style={sm.dest}>{tour.destination}</Text>
       <View style={sm.row}><Text style={sm.rowIcon}>📍</Text><Text style={sm.rowText}>{tour.destination}</Text></View>
       <View style={sm.row}><Text style={sm.rowIcon}>📅</Text><Text style={sm.rowText}>{formatShort(departure.startISO)} – {formatShort(departure.endISO)}</Text></View>
@@ -364,16 +390,19 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
           <View style={fm.fieldRow}>
             <View style={[fm.field, { flexGrow: 2 }]}>
               <Text style={fm.label}>Travel Date</Text>
-              <View style={fm.chipWrap}>
-                {tour.departures.map((d, i) => {
-                  const active = i === departureIdx;
-                  return (
-                    <TouchableOpacity key={i} style={[fm.chip, active && fm.chipActive]} activeOpacity={0.8} onPress={() => setDepartureIdx(i)}>
-                      <Text style={[fm.chipText, active && fm.chipTextActive]}>{formatShort(d.startISO)}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              <TouchableOpacity
+                style={fm.dropdownTrigger}
+                activeOpacity={0.8}
+                disabled={tour.departures.length === 0}
+                onPress={() => setDateMenuOpen(true)}
+              >
+                <Text style={fm.dropdownTriggerText}>
+                  {departure
+                    ? `${formatShort(departure.startISO)} – ${formatShort(departure.endISO)}`
+                    : 'No available dates'}
+                </Text>
+                <ChevronDownIcon />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -557,6 +586,38 @@ export default function BookingWizardModal({ tour, prefill, visible, onClose }: 
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
+
+      <Modal visible={dateMenuOpen} transparent animationType="fade" onRequestClose={() => setDateMenuOpen(false)} statusBarTranslucent>
+        <TouchableOpacity style={dd.backdrop} activeOpacity={1} onPress={() => setDateMenuOpen(false)}>
+          <TouchableOpacity style={dd.sheet} activeOpacity={1}>
+            <Text style={dd.title}>Select Travel Date</Text>
+            <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
+              {tour.departures.map((d, i) => {
+                const active = i === departureIdx;
+                return (
+                  <TouchableOpacity
+                    key={d.id}
+                    style={[dd.row, active && dd.rowActive]}
+                    activeOpacity={0.75}
+                    onPress={() => { setDepartureIdx(i); setDateMenuOpen(false); }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[dd.rowText, active && dd.rowTextActive]}>
+                        {formatShort(d.startISO)} – {formatShort(d.endISO)}
+                      </Text>
+                      <Text style={dd.rowSub}>{money(d.adultPrice)} / adult · {d.slots} slots left</Text>
+                    </View>
+                    {active && <CheckIcon color={C.amber} size={16} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity style={dd.cancelBtn} activeOpacity={0.85} onPress={() => setDateMenuOpen(false)}>
+              <Text style={dd.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
       </SafeAreaProvider>
     </Modal>
   );
@@ -616,11 +677,12 @@ const fm = StyleSheet.create({
   radioDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: C.success },
   radioLabel: { fontSize: 12, fontWeight: '600', color: C.brown },
 
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderWidth: 1, borderColor: C.divider, backgroundColor: C.lightBg, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 },
-  chipActive: { backgroundColor: C.brown, borderColor: C.brown },
-  chipText: { fontSize: 11, fontWeight: '700', color: C.brown },
-  chipTextActive: { color: '#FFFFFF' },
+  dropdownTrigger: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderWidth: 1, borderColor: C.divider, backgroundColor: C.lightBg, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+  },
+  dropdownTriggerText: { fontSize: 12.5, fontWeight: '700', color: C.brown },
 
   stepperRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   stepperBtn: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.lightBg, borderWidth: 1, borderColor: C.divider, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -650,7 +712,7 @@ const sm = StyleSheet.create({
     }),
   },
   title: { fontSize: 13, fontWeight: '900', color: C.brown, marginBottom: 10 },
-  banner: { height: 90, borderRadius: 12, backgroundColor: C.brown, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  banner: { height: 90, borderRadius: 12, backgroundColor: C.brown, alignItems: 'center', justifyContent: 'center', marginBottom: 10, overflow: 'hidden', position: 'relative' },
   dest: { fontSize: 14.5, fontWeight: '900', color: C.brown, marginBottom: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
   rowIcon: { fontSize: 11 },
@@ -668,6 +730,25 @@ const sm = StyleSheet.create({
 
   qrBox: { alignItems: 'center', justifyContent: 'center', backgroundColor: C.lightBg, borderRadius: 12, borderWidth: 2, borderColor: '#2563EB', padding: 10, alignSelf: 'center' },
   qrHint: { fontSize: 10.5, color: C.brownMid, textAlign: 'center', marginTop: 10, lineHeight: 15 },
+});
+
+const dd = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(59,26,12,0.5)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: C.cardBg, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: 18, paddingTop: 18, paddingBottom: 28,
+  },
+  title: { fontSize: 14.5, fontWeight: '900', color: C.brown, marginBottom: 12 },
+  row: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    paddingVertical: 12, paddingHorizontal: 12, borderRadius: 10, marginBottom: 6,
+  },
+  rowActive: { backgroundColor: C.lightBg },
+  rowText: { fontSize: 12.5, fontWeight: '800', color: C.brown },
+  rowTextActive: { color: C.amber },
+  rowSub: { fontSize: 10.5, color: C.brownMid, opacity: 0.75, marginTop: 3 },
+  cancelBtn: { alignItems: 'center', paddingVertical: 13, marginTop: 6 },
+  cancelText: { fontSize: 12.5, fontWeight: '800', color: C.brownMid },
 });
 
 const pm = StyleSheet.create({

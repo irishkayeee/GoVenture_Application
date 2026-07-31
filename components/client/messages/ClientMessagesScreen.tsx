@@ -8,7 +8,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, Modal,
+  View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Image,
   StyleSheet, Platform, KeyboardAvoidingView, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,12 +47,6 @@ const DotsIcon = ({ color = C.brownMid }: { color?: string }) => (
     <Circle cx={12} cy={19} r={1.6} fill={color} />
   </Svg>
 );
-const MicIcon = () => (
-  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-    <Path d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z" stroke={C.brownMid} strokeWidth={1.8} />
-    <Path d="M5 11a7 7 0 0014 0M12 18v3" stroke={C.brownMid} strokeWidth={1.8} strokeLinecap="round" />
-  </Svg>
-);
 const SendIcon = () => (
   <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
     <Path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
@@ -73,6 +67,30 @@ const CloseIcon = () => (
     <Path d="M6 6l12 12M18 6L6 18" stroke={C.brownMid} strokeWidth={2.2} strokeLinecap="round" />
   </Svg>
 );
+const ChatTabIcon = ({ color = C.brownMid }: { color?: string }) => (
+  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+    <Path d="M4 5h16v11H8l-4 4V5z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+  </Svg>
+);
+const UnreadTabIcon = ({ color = C.brownMid }: { color?: string }) => (
+  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+    <Path d="M7 3h7l4 4v14a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+    <Path d="M9 12h6M9 15.5h4" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+  </Svg>
+);
+const HeadsetIcon = ({ color = '#FFFFFF', size = 18 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M4 13v-1a8 8 0 0116 0v1" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    <Path d="M4 13a2 2 0 012-2h1v5H6a2 2 0 01-2-2v-1zM20 13a2 2 0 00-2-2h-1v5h1a2 2 0 002-2v-1z" fill={color} />
+    <Path d="M9 19a2 2 0 002 2h1" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+  </Svg>
+);
+const PinIcon = ({ color = '#FFFFFF', size = 18 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path fill={color} d="M12 22s7.5-7.94 7.5-13A7.5 7.5 0 004.5 9c0 5.06 7.5 13 7.5 13z" />
+    <Circle cx={12} cy={9} r={2.6} fill={C.brown} />
+  </Svg>
+);
 
 const formatDateLabel = (iso: string) => {
   const d = new Date(`${iso}T00:00:00`);
@@ -90,7 +108,7 @@ export function UnreadBadge({ count, style }: { count: number; style?: object })
 }
 const ub = StyleSheet.create({
   badge: {
-    minWidth: 17, height: 17, borderRadius: 9, backgroundColor: C.danger,
+    minWidth: 17, height: 17, borderRadius: 9, backgroundColor: C.amber,
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
   },
   badgeText: { fontSize: 9.5, fontWeight: '800', color: '#FFFFFF' },
@@ -128,7 +146,7 @@ function ConversationList({
         <SearchIcon />
         <TextInput
           style={l.searchInput}
-          placeholder="Search"
+          placeholder="Search messages..."
           placeholderTextColor={C.brownMid + '90'}
           value={search}
           onChangeText={setSearch}
@@ -141,17 +159,22 @@ function ConversationList({
       </TouchableOpacity>
 
       <View style={l.tabRow}>
-        {(['all', 'unread', 'archived'] as Filter[]).map((f) => (
-          <TouchableOpacity key={f} style={l.tabBtn} activeOpacity={0.75} onPress={() => setFilter(f)}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <Text style={[l.tabLabel, filter === f && l.tabLabelActive]}>
-                {f === 'all' ? 'All Messages' : f === 'unread' ? 'Unread' : 'Archived'}
-              </Text>
-              {f === 'unread' && anyUnread && <View style={l.unreadDot} />}
-            </View>
-            {filter === f && <View style={l.tabUnderline} />}
-          </TouchableOpacity>
-        ))}
+        {(['all', 'unread', 'archived'] as Filter[]).map((f) => {
+          const active = filter === f;
+          const tint = active ? C.brown : C.brownMid;
+          return (
+            <TouchableOpacity key={f} style={l.tabBtn} activeOpacity={0.75} onPress={() => setFilter(f)}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                {f === 'all' ? <ChatTabIcon color={tint} /> : f === 'unread' ? <UnreadTabIcon color={tint} /> : <ArchiveIcon color={tint} />}
+                <Text style={[l.tabLabel, active && l.tabLabelActive]}>
+                  {f === 'all' ? 'All Messages' : f === 'unread' ? 'Unread' : 'Archived'}
+                </Text>
+                {f === 'unread' && anyUnread && <View style={l.unreadDot} />}
+              </View>
+              {active && <View style={l.tabUnderline} />}
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {filtered.length === 0 ? (
@@ -161,17 +184,21 @@ function ConversationList({
       ) : (
         <View style={l.list}>
           {filtered.map((c) => {
-            const isActive = c.id === activeId;
+            const isGeneral = !c.bookingId;
             return (
               <TouchableOpacity
                 key={c.id}
-                style={[l.row, isActive && l.rowActive]}
+                style={l.row}
                 activeOpacity={0.8}
                 onPress={() => onSelect(c.id)}
               >
-                <View style={l.avatar}>
-                  <Text style={{ fontSize: 18 }}>{c.emoji}</Text>
-                </View>
+                {c.photoUrl ? (
+                  <Image source={{ uri: c.photoUrl }} style={l.avatarPhoto} resizeMode="cover" />
+                ) : (
+                  <View style={[l.avatar, { backgroundColor: isGeneral ? C.brownMid : C.amber }]}>
+                    {isGeneral ? <HeadsetIcon /> : <PinIcon />}
+                  </View>
+                )}
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={l.rowDest} numberOfLines={1}>{c.destination}</Text>
                   <Text style={l.rowTeam} numberOfLines={1}>GoVenture Travel Team</Text>
@@ -256,9 +283,13 @@ function ChatPanel({
         <TouchableOpacity style={cp.backBtn} onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <BackIcon />
         </TouchableOpacity>
-        <View style={cp.headerAvatar}>
-          <Text style={{ fontSize: 18 }}>{conversation.emoji}</Text>
-        </View>
+        {conversation.photoUrl ? (
+          <Image source={{ uri: conversation.photoUrl }} style={cp.headerAvatarPhoto} resizeMode="cover" />
+        ) : (
+          <View style={[cp.headerAvatar, { backgroundColor: conversation.bookingId ? C.amber : C.brownMid }]}>
+            {conversation.bookingId ? <PinIcon size={16} /> : <HeadsetIcon size={16} />}
+          </View>
+        )}
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={cp.headerTitle} numberOfLines={1}>{conversation.destination}</Text>
           <Text style={cp.headerSub} numberOfLines={1}>Booking ID: {conversation.bookingId || '—'}</Text>
@@ -308,9 +339,6 @@ function ChatPanel({
           </ScrollView>
 
           <View style={cp.inputRow}>
-            <View style={cp.micBtn}>
-              <MicIcon />
-            </View>
             <TextInput
               style={cp.input}
               placeholder="Type a message..."
@@ -627,21 +655,25 @@ export default function ClientMessagesScreen({ onNavigate }: Props) {
 const l = StyleSheet.create({
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: C.lightBg, borderRadius: 10, borderWidth: 1, borderColor: C.divider,
-    paddingHorizontal: 12, paddingVertical: Platform.OS === 'ios' ? 10 : 6,
+    backgroundColor: C.lightBg, borderRadius: 24, borderWidth: 1, borderColor: C.divider,
+    paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 11 : 7,
     marginHorizontal: 16, marginTop: 14,
   },
   searchInput: { flex: 1, fontSize: 13, color: C.brown, padding: 0 },
 
   newConvoBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: C.brown, borderRadius: 12, marginHorizontal: 16, marginTop: 12, paddingVertical: 12,
+    backgroundColor: C.brown, borderRadius: 26, marginHorizontal: 16, marginTop: 14, paddingVertical: 14,
+    ...Platform.select({
+      ios:     { shadowColor: C.brown, shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+      android: { elevation: 2 },
+    }),
   },
-  newConvoBtnText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
+  newConvoBtnText: { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
 
-  tabRow: { flexDirection: 'row', gap: 20, marginHorizontal: 16, marginTop: 16, borderBottomWidth: 1, borderBottomColor: C.divider },
+  tabRow: { flexDirection: 'row', gap: 20, marginHorizontal: 16, marginTop: 18, borderBottomWidth: 1, borderBottomColor: C.divider },
   tabBtn: { paddingBottom: 10 },
-  tabLabel: { fontSize: 12.5, fontWeight: '700', color: C.brownMid, opacity: 0.7 },
+  tabLabel: { fontSize: 12, fontWeight: '700', color: C.brownMid, opacity: 0.7 },
   tabLabelActive: { color: C.brown, opacity: 1, fontWeight: '900' },
   tabUnderline: { height: 2, backgroundColor: C.amber, borderRadius: 1, marginTop: 8 },
   unreadDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: C.danger },
@@ -649,18 +681,18 @@ const l = StyleSheet.create({
   emptyWrap: { padding: 32, alignItems: 'center' },
   emptyText: { fontSize: 12, color: C.brownMid, opacity: 0.7 },
 
-  list: { marginTop: 4 },
+  list: { marginTop: 12, paddingHorizontal: 16, gap: 10 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: C.divider,
+    paddingHorizontal: 14, paddingVertical: 13,
+    backgroundColor: '#FFFFFF', borderRadius: 16,
     position: 'relative',
   },
-  rowActive: { backgroundColor: C.lightBg },
   avatar: {
-    width: 40, height: 40, borderRadius: 20, flexShrink: 0,
-    backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center',
+    width: 46, height: 46, borderRadius: 23, flexShrink: 0,
+    alignItems: 'center', justifyContent: 'center',
   },
+  avatarPhoto: { width: 46, height: 46, borderRadius: 23, flexShrink: 0 },
   rowDest: { fontSize: 13.5, fontWeight: '900', color: C.brown },
   rowTeam: { fontSize: 10.5, fontWeight: '700', color: C.amber, marginTop: 1 },
   rowPreview: { fontSize: 11.5, color: C.brownMid, opacity: 0.75, marginTop: 2 },
@@ -706,8 +738,9 @@ const cp = StyleSheet.create({
   backBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   headerAvatar: {
     width: 36, height: 36, borderRadius: 18, flexShrink: 0,
-    backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
+  headerAvatarPhoto: { width: 36, height: 36, borderRadius: 18, flexShrink: 0 },
   headerTitle: { fontSize: 14.5, fontWeight: '900', color: C.brown },
   headerSub: { fontSize: 10.5, color: C.brownMid, opacity: 0.75, marginTop: 1 },
   dotsBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -735,11 +768,6 @@ const cp = StyleSheet.create({
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
     paddingHorizontal: 14, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 20 : 14,
     backgroundColor: C.cardBg, borderTopWidth: 1, borderTopColor: C.divider,
-  },
-  micBtn: {
-    width: 40, height: 40, borderRadius: 20, flexShrink: 0,
-    backgroundColor: C.lightBg, borderWidth: 1, borderColor: C.divider,
-    alignItems: 'center', justifyContent: 'center',
   },
   input: {
     flex: 1, maxHeight: 100,

@@ -144,12 +144,13 @@ interface InputFieldProps {
   hasToggle?:    boolean;
   errorMsg?:     string;
   keyboardType?: 'default' | 'email-address';
+  onFocus?:      () => void;
 }
 
 export const InputField = ({
   icon, placeholder, value, onChangeText,
   secureEntry, toggleSecure, hasToggle,
-  errorMsg, keyboardType = 'default',
+  errorMsg, keyboardType = 'default', onFocus,
 }: InputFieldProps) => (
   <View style={inp.container}>
     <View style={[inp.wrap, !!errorMsg && inp.wrapError]}>
@@ -160,6 +161,7 @@ export const InputField = ({
         placeholderTextColor="rgba(107,51,24,0.38)"
         value={value}
         onChangeText={onChangeText}
+        onFocus={onFocus}
         secureTextEntry={secureEntry}
         autoCapitalize="none"
         autoCorrect={false}

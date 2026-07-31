@@ -3,13 +3,14 @@
  */
 
 import { DancingScript_700Bold, useFonts } from '@expo-google-fonts/dancing-script';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text, TouchableOpacity,
   TouchableWithoutFeedback,
@@ -18,8 +19,9 @@ import {
 import { C, CloseIcon } from './Authshared';
 import LoginForm from './LoginForm';
 import SignUpForm from './SignUpForm';
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const CARD_W = Math.min(width * 0.94, 400);
+const CARD_MAX_H = height * 0.88;
 
 /* ── Tab ── */
 const Tab = ({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) => (
@@ -45,8 +47,10 @@ interface LoginModalProps {
 export default function LoginModal({ visible, onClose }: LoginModalProps) {
   const [fontsLoaded] = useFonts({ DancingScript_700Bold });
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
+  const scrollRef = useRef<ScrollView>(null);
 
   const isLogin = activeTab === 'login';
+  const scrollToBottom = () => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
 
   return (
     <Modal
@@ -60,7 +64,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         <View style={m.backdrop}>
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
               style={m.kav}
             >
               <View style={m.card}>
@@ -75,38 +79,48 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
                   <CloseIcon />
                 </TouchableOpacity>
 
-                {/* ── Headline ── */}
-                <View style={m.headlineWrap}>
-                  <Text style={[m.welcome, fontsLoaded && { fontFamily: 'DancingScript_700Bold', fontWeight: 'normal' as const }]}>
-                    {isLogin ? 'Welcome Back!' : 'Join Us!'}
+                {/* ── Scrollable content — the SignUp form especially can be taller than the screen ── */}
+                <ScrollView
+                  ref={scrollRef}
+                  style={{ flex: 1 }}
+                  contentContainerStyle={m.scrollContent}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {/* ── Headline ── */}
+                  <View style={m.headlineWrap}>
+                    <Text style={[m.welcome, fontsLoaded && { fontFamily: 'DancingScript_700Bold', fontWeight: 'normal' as const }]}>
+                      {isLogin ? 'Welcome Back!' : 'Join Us!'}
+                    </Text>
+                    <Text style={m.spark}>✦</Text>
+                  </View>
+                  <Text style={m.sub}>
+                    {isLogin
+                      ? 'Log in to continue your adventure'
+                      : 'Create your GoVenture account'}
                   </Text>
-                  <Text style={m.spark}>✦</Text>
-                </View>
-                <Text style={m.sub}>
-                  {isLogin
-                    ? 'Log in to continue your adventure'
-                    : 'Create your GoVenture account'}
-                </Text>
 
-                {/* ── Tabs ── */}
-                <View style={m.tabRow}>
-                  <Tab label="LOG IN"  active={isLogin}  onPress={() => setActiveTab('login')}  />
-                  <Tab label="SIGN UP" active={!isLogin} onPress={() => setActiveTab('signup')} />
-                </View>
+                  {/* ── Tabs ── */}
+                  <View style={m.tabRow}>
+                    <Tab label="LOG IN"  active={isLogin}  onPress={() => setActiveTab('login')}  />
+                    <Tab label="SIGN UP" active={!isLogin} onPress={() => setActiveTab('signup')} />
+                  </View>
 
-                {/* ── Form (fixed, not scrollable — card grows to fit) ── */}
-                <View style={m.formWrap}>
-                  {isLogin
-                    ? <LoginForm
-                        onSwitchToSignUp={() => setActiveTab('signup')}
-                        onSuccess={onClose}
-                      />
-                    : <SignUpForm
-                        onSwitchToLogin={() => setActiveTab('login')}
-                        onSuccess={onClose}
-                      />
-                  }
-                </View>
+                  {/* ── Form ── */}
+                  <View style={m.formWrap}>
+                    {isLogin
+                      ? <LoginForm
+                          onSwitchToSignUp={() => setActiveTab('signup')}
+                          onSuccess={onClose}
+                        />
+                      : <SignUpForm
+                          onSwitchToLogin={() => setActiveTab('login')}
+                          onSuccess={onClose}
+                          onFieldFocus={scrollToBottom}
+                        />
+                    }
+                  </View>
+                </ScrollView>
 
               </View>
             </KeyboardAvoidingView>
@@ -126,11 +140,15 @@ const m = StyleSheet.create({
     paddingVertical: 16,
   },
   kav: {
-    width: '100%',
-    alignItems: 'center',
+    flex:           1,
+    width:          '100%',
+    alignItems:     'center',
+    justifyContent: 'center',
   },
   card: {
+    flex:              1,
     width:             CARD_W,
+    maxHeight:         CARD_MAX_H,
     backgroundColor:   C.white,
     borderRadius:      22,
     paddingHorizontal: 20,
@@ -142,6 +160,7 @@ const m = StyleSheet.create({
       android: { elevation: 12 },
     }),
   },
+  scrollContent: { flexGrow: 1, paddingBottom: 12 },
   closeBtn: {
     position:        'absolute',
     top:             12,

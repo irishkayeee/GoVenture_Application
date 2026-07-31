@@ -28,6 +28,8 @@ export type Booking = {
   paymentStatus:  'Pending' | 'Paid';
   status:         BookingStatus;
   hasReview:      boolean;
+  myRating:       number | null;
+  myReviewText:   string;
 };
 
 export type CreateBookingInput = {
@@ -125,7 +127,7 @@ export function BookingsProvider({ children }: { children: React.ReactNode }) {
       });
       const result = await res.json();
       if (result.status !== 'success') return { ok: false, message: result.message || 'Failed to submit review.' };
-      setBookings((prev) => prev.map((b) => (b.id === reference ? { ...b, hasReview: true } : b)));
+      setBookings((prev) => prev.map((b) => (b.id === reference ? { ...b, hasReview: true, myRating: rating, myReviewText: reviewText } : b)));
       return { ok: true };
     } catch {
       return { ok: false, message: "Can't connect to the server. Please check if XAMPP is running." };

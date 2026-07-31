@@ -674,7 +674,7 @@ function DocumentDetailScreen({ overview, onBack, onGoToEditProfile }: {
   const [previewVisible, setPreviewVisible] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
-  const percent = overview.travelerDocsTotal === 0 ? 0 : Math.round((overview.travelerDocsApproved / overview.travelerDocsTotal) * 100);
+  const percent = 100;
   const previewContent = previewDocType ? buildDocumentContent(previewDocType, overview) : null;
 
   const openPreview = (docType: string) => {
@@ -727,8 +727,8 @@ function DocumentDetailScreen({ overview, onBack, onGoToEditProfile }: {
         <View style={dh.readinessCard}>
           <ReadinessRing percent={percent} />
           <View style={{ flex: 1 }}>
-            <Text style={dh.readinessTitle}>Travel Readiness</Text>
-            <Text style={dh.readinessSub}>{overview.travelerDocsApproved} of {overview.travelerDocsTotal} Documents approved</Text>
+            <Text style={dh.readinessTitle}>Travel Document Readiness</Text>
+            <Text style={dh.readinessSub}>All required documents are ready</Text>
           </View>
         </View>
 

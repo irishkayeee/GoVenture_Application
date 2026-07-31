@@ -75,6 +75,14 @@ const StarIcon = () => (
     <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" />
   </Svg>
 );
+/** Generic travel-photo glyph — shown when a tour has no image, or its image fails to load. */
+const PhotoFallbackIcon = ({ color = 'rgba(255,255,255,0.85)', size = 30 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M4 18l5-6 4 4.5 3-3.5 4 5H4z" fill={color} />
+    <Circle cx={8} cy={7.5} r={2} fill={color} />
+    <Path d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke={color} strokeWidth={1.6} />
+  </Svg>
+);
 
 function computeRemaining(targetISO: string) {
   const diff = Math.max(0, new Date(targetISO).getTime() - Date.now());
@@ -201,10 +209,21 @@ function Section({ title, subtitle, viewAllLabel, onViewAll, children }: {
 
 /* ── Favorites ── */
 function FavoriteCard({ tour, onPress, onToggleFavorite }: { tour: FavoriteTour; onPress: () => void; onToggleFavorite: () => void }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = !!tour.imageUrl && !imageFailed;
   return (
     <View style={fc.card}>
       <View style={fc.banner}>
-        <Text style={{ fontSize: 34 }}>{tour.emoji}</Text>
+        {showImage ? (
+          <Image
+            source={{ uri: tour.imageUrl! }}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <PhotoFallbackIcon />
+        )}
         <TouchableOpacity style={fc.heart} activeOpacity={0.8} onPress={onToggleFavorite} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <HeartIcon />
         </TouchableOpacity>
@@ -226,9 +245,22 @@ function FavoriteCard({ tour, onPress, onToggleFavorite }: { tour: FavoriteTour;
 
 /* ── Recommended row ── */
 function RecommendedRow({ tour, onBook }: { tour: RecommendedTour; onBook: () => void }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = !!tour.imageUrl && !imageFailed;
   return (
     <View style={rc.row}>
-      <View style={rc.thumb}><Text style={{ fontSize: 20 }}>{tour.emoji}</Text></View>
+      <View style={rc.thumb}>
+        {showImage ? (
+          <Image
+            source={{ uri: tour.imageUrl! }}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <PhotoFallbackIcon size={18} />
+        )}
+      </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={rc.dest} numberOfLines={1}>{tour.destination}</Text>
         <Text style={rc.price}>from <Text style={rc.priceAmt}>{tour.pricePerPerson}</Text> / person</Text>
@@ -518,7 +550,7 @@ export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigat
       [...tours]
         .sort((a, b) => b.rating - a.rating || b.reviewCount - a.reviewCount)
         .slice(0, 3)
-        .map((t) => ({ id: t.id, destination: t.destination, pricePerPerson: money(t.pricePerPerson), emoji: t.emoji })),
+        .map((t) => ({ id: t.id, destination: t.destination, pricePerPerson: money(t.pricePerPerson), emoji: t.emoji, imageUrl: t.imageUrl })),
     [tours]
   );
 
@@ -526,7 +558,7 @@ export default function ClientDashboardHome({ name = 'Jared Abellera', onNavigat
     () =>
       tours
         .filter((t) => favoriteIds.has(t.id))
-        .map((t) => ({ id: t.id, destination: t.destination, rating: t.rating, reviews: t.reviewCount, pricePerPerson: money(t.pricePerPerson), emoji: t.emoji })),
+        .map((t) => ({ id: t.id, destination: t.destination, rating: t.rating, reviews: t.reviewCount, pricePerPerson: money(t.pricePerPerson), emoji: t.emoji, imageUrl: t.imageUrl })),
     [tours, favoriteIds]
   );
 
@@ -825,7 +857,7 @@ const fc = StyleSheet.create({
     borderWidth: 1, borderColor: C.divider, backgroundColor: C.cardBg,
   },
   banner: {
-    height: 90, backgroundColor: C.amber, alignItems: 'center', justifyContent: 'center', position: 'relative',
+    height: 90, backgroundColor: C.amber, alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden',
   },
   heart: {
     position: 'absolute', top: 8, right: 8,
@@ -850,7 +882,7 @@ const rc = StyleSheet.create({
     paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.divider,
   },
   thumb: {
-    width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+    width: 44, height: 44, borderRadius: 10, flexShrink: 0, overflow: 'hidden',
     backgroundColor: C.amber, alignItems: 'center', justifyContent: 'center',
   },
   dest: { fontSize: 12.5, fontWeight: '800', color: C.brown },

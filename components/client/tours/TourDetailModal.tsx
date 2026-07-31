@@ -128,11 +128,11 @@ function RichItineraryDay({ day, open, onToggle }: { day: DetailItineraryDay; op
         <View style={it.dayBody}>
           <View style={{ flexDirection: 'row', gap: 16, marginBottom: 10 }}>
             {day.accommodation && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                <BedIcon />
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, flex: 1 }}>
+                <View style={{ marginTop: 1 }}><BedIcon /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={it.factLabel}>Accommodation</Text>
-                  <Text style={it.factValue} numberOfLines={1}>{day.accommodation}</Text>
+                  <Text style={it.factValue}>{day.accommodation}</Text>
                 </View>
               </View>
             )}
@@ -198,6 +198,7 @@ function DetailModalBody({
   const { favoriteIds, toggleFavorite } = useFavorites();
   const favorited = favoriteIds.has(tour.id);
   const detail = getTourDetailContent(tour.destination);
+  const compact = width < 360;
 
   const displayName = detail?.displayName ?? tour.destination;
   const displaySubtitle = detail?.subtitle || tour.subtitle;
@@ -205,13 +206,13 @@ function DetailModalBody({
   const inclusions = detail?.inclusions ?? tour.included;
   const exclusions = detail?.exclusions ?? tour.excluded;
   const reviews = detail?.reviews ?? tour.reviews;
-  const availableDateRows = detail
-    ? detail.availableDates.map((d) => ({ id: d.id, label: d.label, price: d.adultPrice }))
-    : tour.departures.map((d) => ({
-        id: d.id,
-        label: `${formatDateRange(d.startISO)} – ${formatDateRange(d.endISO)}`,
-        price: d.adultPrice,
-      }));
+  // Always reflect the tour's real departures here — this is the same list the booking
+  // wizard's Travel Date picker and Trip Summary use, so they must never diverge.
+  const availableDateRows = tour.departures.map((d) => ({
+    id: d.id,
+    label: `${formatDateRange(d.startISO)} – ${formatDateRange(d.endISO)}`,
+    price: d.adultPrice,
+  }));
 
   return (
     <View style={m.safe}>
@@ -232,29 +233,34 @@ function DetailModalBody({
       </View>
 
       <View style={m.header}>
-        <Text style={m.headerTitle}>{displayName}</Text>
-        {!!displaySubtitle && <Text style={m.headerSubtitle}>{displaySubtitle}</Text>}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          {!!typeBadge && <View style={m.typeBadge}><Text style={m.typeBadgeText}>{typeBadge}</Text></View>}
-          {tour.isNew ? (
-            <Text style={m.headerMetaNew}>★ New</Text>
-          ) : (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <StarIcon />
-              <Text style={m.headerMeta}>{tour.rating.toFixed(1)} ({tour.reviewCount})</Text>
+        <View style={[m.headerRow, compact && m.headerRowCompact]}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={m.headerTitle}>{displayName}</Text>
+            {!!displaySubtitle && <Text style={m.headerSubtitle}>{displaySubtitle}</Text>}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              {!!typeBadge && <View style={m.typeBadge}><Text style={m.typeBadgeText}>{typeBadge}</Text></View>}
+              {tour.isNew ? (
+                <Text style={m.headerMetaNew}>★ New</Text>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <StarIcon />
+                  <Text style={m.headerMeta}>{tour.rating.toFixed(1)} ({tour.reviewCount})</Text>
+                </View>
+              )}
             </View>
-          )}
-        </View>
-
-        <View style={m.priceTeaser}>
-          <View>
-            <Text style={m.priceTeaserLabel}>FROM</Text>
-            <Text style={m.priceTeaserValue}>{money(tour.pricePerPerson)} <Text style={m.priceTeaserPerson}>/ person</Text></Text>
-            <Text style={m.priceTeaserDuration}>{tour.duration}</Text>
           </View>
-          {!!detail?.bestDeal && (
-            <View style={m.bestDealPill}><Text style={m.bestDealText}>★ BEST DEAL</Text></View>
-          )}
+
+          <View style={[m.priceTeaser, compact && m.priceTeaserCompact]}>
+            {!!detail?.bestDeal && (
+              <View style={[m.bestDealPill, compact && m.bestDealPillCompact]}>
+                <Text style={[m.bestDealText, compact && m.bestDealTextCompact]}>★ BEST DEAL</Text>
+              </View>
+            )}
+            <Text style={[m.priceTeaserLabel, compact && m.priceTeaserLabelCompact]}>FROM</Text>
+            <Text style={[m.priceTeaserValue, compact && m.priceTeaserValueCompact]} numberOfLines={1}>{money(tour.pricePerPerson)}</Text>
+            <Text style={[m.priceTeaserPerson, compact && m.priceTeaserPersonCompact]}>/ person</Text>
+            <Text style={[m.priceTeaserDuration, compact && m.priceTeaserDurationCompact]} numberOfLines={1}>{tour.duration}</Text>
+          </View>
         </View>
       </View>
 
@@ -429,6 +435,8 @@ const m = StyleSheet.create({
   },
 
   header: { backgroundColor: C.brown, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  headerRowCompact: { gap: 6 },
   headerTitle: { fontSize: 21, fontWeight: '900', color: '#FFFFFF' },
   headerSubtitle: { fontSize: 12.5, color: 'rgba(255,255,255,0.85)', marginTop: 2, fontStyle: 'italic' },
   headerMeta: { fontSize: 11.5, color: 'rgba(255,255,255,0.85)', fontWeight: '600' },
@@ -438,15 +446,22 @@ const m = StyleSheet.create({
   typeBadgeText: { fontSize: 10, fontWeight: '800', color: '#FFFFFF' },
 
   priceTeaser: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginTop: 14,
+    alignItems: 'flex-end', flexShrink: 0,
+    backgroundColor: '#FFFFFF', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10,
   },
-  priceTeaserLabel: { fontSize: 9.5, fontWeight: '800', color: C.brownMid, opacity: 0.7, letterSpacing: 0.5 },
-  priceTeaserValue: { fontSize: 18, fontWeight: '900', color: C.brown, marginTop: 2 },
-  priceTeaserPerson: { fontSize: 11, fontWeight: '600', color: C.brownMid },
-  priceTeaserDuration: { fontSize: 10.5, color: C.brownMid, opacity: 0.8, marginTop: 2 },
-  bestDealPill: { backgroundColor: C.amber, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
-  bestDealText: { fontSize: 10, fontWeight: '900', color: '#FFFFFF' },
+  priceTeaserCompact: { paddingHorizontal: 8, paddingVertical: 7, borderRadius: 11 },
+  priceTeaserLabel: { fontSize: 9, fontWeight: '800', color: C.brownMid, opacity: 0.7, letterSpacing: 0.4 },
+  priceTeaserLabelCompact: { fontSize: 7.5 },
+  priceTeaserValue: { fontSize: 16, fontWeight: '900', color: C.brown, marginTop: 1 },
+  priceTeaserValueCompact: { fontSize: 13 },
+  priceTeaserPerson: { fontSize: 9.5, fontWeight: '600', color: C.brownMid },
+  priceTeaserPersonCompact: { fontSize: 8 },
+  priceTeaserDuration: { fontSize: 9.5, color: C.brownMid, opacity: 0.8, marginTop: 2 },
+  priceTeaserDurationCompact: { fontSize: 8, marginTop: 1 },
+  bestDealPill: { backgroundColor: C.amber, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 4, marginBottom: 4 },
+  bestDealPillCompact: { paddingHorizontal: 6, paddingVertical: 3, marginBottom: 3 },
+  bestDealText: { fontSize: 9, fontWeight: '900', color: '#FFFFFF' },
+  bestDealTextCompact: { fontSize: 7.5 },
 });
 
 const sec = StyleSheet.create({

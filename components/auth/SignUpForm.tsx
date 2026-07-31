@@ -25,9 +25,11 @@ import {
 interface SignUpFormProps {
   onSwitchToLogin: () => void;
   onSuccess?:      () => void;
+  /** Called when the Password/Confirm Password fields gain focus, so the parent can scroll them clear of the keyboard. */
+  onFieldFocus?:   () => void;
 }
 
-export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormProps) {
+export default function SignUpForm({ onSwitchToLogin, onSuccess, onFieldFocus }: SignUpFormProps) {
   const [firstName,   setFirstName]   = useState('');
   const [lastName,    setLastName]    = useState('');
   const [email,       setEmail]       = useState('');
@@ -129,6 +131,7 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
         placeholder="Password"
         value={password}
         onChangeText={t => { setPassword(t); setErrors(p => ({ ...p, password: undefined })); }}
+        onFocus={onFieldFocus}
         secureEntry={!showPass}
         hasToggle
         toggleSecure={() => setShowPass(v => !v)}
@@ -145,6 +148,7 @@ export default function SignUpForm({ onSwitchToLogin, onSuccess }: SignUpFormPro
         placeholder="Confirm Password"
         value={confirmPass}
         onChangeText={t => { setConfirmPass(t); setErrors(p => ({ ...p, confirmPass: undefined })); }}
+        onFocus={onFieldFocus}
         secureEntry={!showConfirm}
         hasToggle
         toggleSecure={() => setShowConfirm(v => !v)}

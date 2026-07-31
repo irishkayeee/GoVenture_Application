@@ -27,6 +27,7 @@ export type TourConversation = {
   bookingStatus: BookingStatus | '';
   totalAmount:   string;
   emoji:         string;
+  photoUrl:      string | null;
   lastMessage:   string;
   timeAgo:       string;
   unreadCount:   number;

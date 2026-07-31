@@ -68,6 +68,11 @@ const CloseWhiteIcon = () => (
     <Path d="M6 6l12 12M18 6L6 18" stroke="#FFFFFF" strokeWidth={2.4} strokeLinecap="round" />
   </Svg>
 );
+const CheckIcon = ({ color = '#FFFFFF', size = 24 }: { color?: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M4 12l6 6L20 6" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
 const DocIcon = () => (
   <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
     <Path d="M7 3h7l4 4v14a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="#FFFFFF" strokeWidth={1.8} strokeLinejoin="round" />
@@ -195,8 +200,8 @@ function DetailField({ label, value }: { label: string; value: string }) {
   );
 }
 
-const StarIcon = ({ filled }: { filled: boolean }) => (
-  <Svg width={30} height={30} viewBox="0 0 24 24" fill={filled ? C.amber : 'none'}>
+const StarIcon = ({ filled, size = 30 }: { filled: boolean; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? C.amber : 'none'}>
     <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z" stroke={filled ? C.amber : C.brownMid} strokeWidth={1.5} strokeLinejoin="round" />
   </Svg>
 );
@@ -257,17 +262,38 @@ function RateTourModal({ visible, onClose, onSubmit }: { visible: boolean; onClo
   );
 }
 
+function ReviewSubmittedModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={rs.overlay}>
+        <View style={rs.card}>
+          <View style={rs.iconCircle}><CheckIcon color={C.success} size={26} /></View>
+          <Text style={rs.title}>Rating Submitted!</Text>
+          <Text style={rs.body}>Thanks for sharing your feedback — it helps other travelers plan their trips.</Text>
+          <TouchableOpacity style={rs.okBtn} activeOpacity={0.85} onPress={onClose}>
+            <Text style={rs.okBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function BookingDetailModal({ booking, onClose, onViewDocuments }: {
   booking: Booking | null; onClose: () => void; onViewDocuments: (bookingId: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { submitReview } = useBookings();
   const [rateModalVisible, setRateModalVisible] = useState(false);
+  const [reviewSubmittedVisible, setReviewSubmittedVisible] = useState(false);
   if (!booking) return null;
 
   const handleSubmitReview = async (rating: number, text: string) => {
     const result = await submitReview(booking.id, rating, text);
-    if (result.ok) setRateModalVisible(false);
+    if (result.ok) {
+      setRateModalVisible(false);
+      setReviewSubmittedVisible(true);
+    }
   };
 
   const handleViewDocuments = () => {
@@ -307,7 +333,15 @@ function BookingDetailModal({ booking, onClose, onViewDocuments }: {
             {booking.status === 'Completed' && (
               <View style={dt.reviewCard}>
                 {booking.hasReview ? (
-                  <Text style={dt.reviewDoneText}>✓ You've already reviewed this tour. Thanks!</Text>
+                  <View style={dt.myReviewCard}>
+                    <Text style={dt.reviewDoneText}>✓ You've already reviewed this tour. Thanks!</Text>
+                    <View style={dt.myReviewStarsRow}>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <StarIcon key={n} filled={n <= (booking.myRating ?? 0)} size={18} />
+                      ))}
+                    </View>
+                    {!!booking.myReviewText && <Text style={dt.myReviewText}>"{booking.myReviewText}"</Text>}
+                  </View>
                 ) : (
                   <TouchableOpacity style={dt.rateBtn} activeOpacity={0.85} onPress={() => setRateModalVisible(true)}>
                     <StarIcon filled />
@@ -331,6 +365,7 @@ function BookingDetailModal({ booking, onClose, onViewDocuments }: {
       </View>
 
       <RateTourModal visible={rateModalVisible} onClose={() => setRateModalVisible(false)} onSubmit={handleSubmitReview} />
+      <ReviewSubmittedModal visible={reviewSubmittedVisible} onClose={() => setReviewSubmittedVisible(false)} />
       </SafeAreaProvider>
     </Modal>
   );
@@ -591,6 +626,12 @@ const dt = StyleSheet.create({
 
   reviewCard: { marginTop: 14 },
   reviewDoneText: { fontSize: 12, color: C.success, fontWeight: '700', textAlign: 'center' },
+  myReviewCard: {
+    backgroundColor: C.lightBg, borderRadius: 12, borderWidth: 1, borderColor: C.divider,
+    padding: 14, alignItems: 'center', gap: 8,
+  },
+  myReviewStarsRow: { flexDirection: 'row', gap: 2 },
+  myReviewText: { fontSize: 12, color: C.brownMid, fontStyle: 'italic', textAlign: 'center', lineHeight: 17 },
   rateBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: C.lightBg, borderWidth: 1, borderColor: C.amber, borderRadius: 12, paddingVertical: 12,
@@ -628,4 +669,24 @@ const rt = StyleSheet.create({
   cancelText: { fontSize: 12.5, fontWeight: '800', color: C.brownMid },
   submitBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 12, paddingVertical: 12, backgroundColor: C.amber },
   submitText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
+});
+
+const rs = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(59,26,12,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  card: {
+    width: '100%', maxWidth: 340, backgroundColor: C.cardBg, borderRadius: 18, padding: 24,
+    alignItems: 'center',
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } },
+      android: { elevation: 8 },
+    }),
+  },
+  iconCircle: {
+    width: 52, height: 52, borderRadius: 26, backgroundColor: '#E7F7F1',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+  },
+  title: { fontSize: 15.5, fontWeight: '900', color: C.brown, textAlign: 'center' },
+  body: { fontSize: 12, color: C.brownMid, marginTop: 6, textAlign: 'center', lineHeight: 17 },
+  okBtn: { marginTop: 18, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', borderRadius: 12, paddingVertical: 12, backgroundColor: C.amber },
+  okBtnText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
 });

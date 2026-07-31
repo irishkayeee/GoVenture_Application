@@ -4,9 +4,9 @@
  */
 
 import { DancingScript_700Bold, useFonts } from '@expo-google-fonts/dancing-script';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
-  View, Text, Image,
+  View, Text, Image, ScrollView,
   KeyboardAvoidingView, Platform, StyleSheet, StatusBar, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,8 +22,10 @@ export default function LoginScreen() {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
   const isLogin = activeTab === 'login';
   const { width } = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
 
   const s = useMemo(() => createStyles(width), [width]);
+  const scrollToBottom = () => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
 
   return (
     <View style={s.root}>
@@ -31,10 +33,16 @@ export default function LoginScreen() {
         <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={s.flex}
         >
-          <View style={[s.contentOuter, !isLogin && s.contentOuterTop]}>
+          <ScrollView
+            ref={scrollRef}
+            style={s.flex}
+            contentContainerStyle={[s.scrollContent, !isLogin && s.scrollContentTop]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             <View style={s.contentWrap}>
               <Image
                 source={require('../../assets/images/go_logo.png')}
@@ -56,11 +64,11 @@ export default function LoginScreen() {
 
                 {isLogin
                   ? <LoginForm onSwitchToSignUp={() => setActiveTab('signup')} />
-                  : <SignUpForm onSwitchToLogin={() => setActiveTab('login')} />
+                  : <SignUpForm onSwitchToLogin={() => setActiveTab('login')} onFieldFocus={scrollToBottom} />
                 }
               </View>
             </View>
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
 
@@ -89,8 +97,8 @@ function createStyles(width: number) {
     // Card sits above the footer image (zIndex 2) so its bottom content
     // (e.g. the "Sign Up" switch link) never gets covered by it.
     footerFixed: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 1 },
-    contentOuter: { flex: 1, justifyContent: 'center' },
-    contentOuterTop: { justifyContent: 'flex-start', paddingTop: 40 },
+    scrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 24 },
+    scrollContentTop: { justifyContent: 'flex-start', paddingTop: 40, paddingBottom: 100 },
     contentWrap: { width: '100%', maxWidth: CONTENT_MAX_W, alignSelf: 'center', paddingHorizontal: 24 },
     logo: { width: logoW, height: logoW * (593 / 981), alignSelf: 'center', marginBottom: 24 },
     logoTight: { marginBottom: 24 },
